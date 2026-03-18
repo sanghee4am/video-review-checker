@@ -827,18 +827,24 @@ if "creator_report" in st.session_state:
 
     # Score display
     score = report.overall_score
-    score_class = "score-high" if score >= 80 else ("score-mid" if score >= 60 else "score-low")
+    score_class = "score-high" if score >= 90 else ("score-mid" if score >= 60 else "score-low")
+
+    # 90점 미만이면 AI가 approved라 해도 revision_needed로 강제
+    _display_status = report.overall_status
+    if score < 90 and _display_status == "approved":
+        _display_status = "revision_needed"
+
     status_labels = {
         "approved": t("status_approved"),
         "revision_needed": t("status_revision"),
         "rejected": t("status_rejected"),
     }
-    status_label = status_labels.get(report.overall_status, "—")
+    status_label = status_labels.get(_display_status, "—")
     status_icons = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}
 
     st.markdown(
         f'<div class="score-display {score_class}">{score}</div>'
-        f'<div class="score-label">{status_icons.get(report.overall_status, "")} {status_label}</div>',
+        f'<div class="score-label">{status_icons.get(_display_status, "")} {status_label}</div>',
         unsafe_allow_html=True,
     )
 
@@ -1090,9 +1096,9 @@ if "creator_report" in st.session_state:
                 unsafe_allow_html=True,
             )
 
-    # --- Next Steps (for approved videos — AI or admin approved) ---
+    # --- Next Steps (for approved videos — 90+ AI approved or admin approved) ---
     _is_approved = (
-        report.overall_status == "approved"
+        (report.overall_score >= 90 and report.overall_status == "approved")
         or (has_name and _history and _history[0].get("admin_decision") in ("approved", "auto_approved"))
     )
     if _is_approved:

@@ -946,13 +946,19 @@ with tab2:
 
         # --- Hero Score Card ---
         score = report.overall_score
-        score_class = "hero-score-high" if score >= 80 else ("hero-score-mid" if score >= 60 else "hero-score-low")
+        score_class = "hero-score-high" if score >= 90 else ("hero-score-mid" if score >= 60 else "hero-score-low")
+
+        # 90점 미만이면 AI가 approved라 해도 revision_needed로 강제
+        _display_status = report.overall_status
+        if score < 90 and _display_status == "approved":
+            _display_status = "revision_needed"
+
         status_labels = {
             "approved": "✅ 승인 — 수정 없이 게시 가능",
             "revision_needed": "📝 수정 필요 — 아래 항목 확인 후 재촬영/편집",
             "rejected": "❌ 반려 — 가이드라인 재확인 필요",
         }
-        status_label = status_labels.get(report.overall_status, "❓ 미정")
+        status_label = status_labels.get(_display_status, "❓ 미정")
 
         # Stats
         s_pass = sum(1 for s in report.scene_reviews if s.status == "pass")
@@ -981,9 +987,9 @@ with tab2:
         )
 
         # --- Issues first: violations + manual flags ---
-        has_issues = (n_violated > 0 or s_fail > 0 or n_manual > 0)
+        has_issues = (n_violated > 0 or s_fail > 0 or s_warn > 0 or n_manual > 0)
 
-        if has_issues and report.overall_status != "approved":
+        if has_issues:
             st.markdown("### 🚨 수정 필요 항목")
 
             # Failed/warning scenes first
