@@ -8,9 +8,7 @@ Creators can:
 """
 from __future__ import annotations
 
-import json
 import sys
-import tempfile
 from pathlib import Path
 
 import streamlit as st
@@ -20,10 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import ANTHROPIC_API_KEY, OPENAI_API_KEY
 from models.guideline import ParsedGuideline
 from models.review_result import ReviewReport
-from models.review_history import save_review, get_previous_review
-
-# --- Saved Guidelines ---
-SAVED_GUIDELINES_DIR = Path(__file__).parent.parent / "saved_guidelines"
+import db
 
 st.set_page_config(
     page_title="크리에이터 영상 업로드",
@@ -98,28 +93,6 @@ st.markdown(
 )
 
 
-def _list_campaigns() -> list[tuple[str, Path]]:
-    """Return saved campaigns."""
-    if not SAVED_GUIDELINES_DIR.exists():
-        return []
-    files = sorted(SAVED_GUIDELINES_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    result = []
-    for f in files:
-        try:
-            meta = json.loads(f.read_text(encoding="utf-8"))
-            name = meta.get("campaign_name", f.stem)
-            result.append((name, f))
-        except Exception:
-            result.append((f.stem, f))
-    return result
-
-
-def _load_guideline(filepath: Path) -> tuple[str, ParsedGuideline]:
-    data = json.loads(filepath.read_text(encoding="utf-8"))
-    guideline = ParsedGuideline.model_validate(data["guideline"])
-    return data["campaign_name"], guideline
-
-
 # --- Step 1: Campaign Selection ---
 st.markdown(
     '<div class="step-card">'
@@ -129,12 +102,12 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-campaigns = _list_campaigns()
+campaigns = db.list_guidelines()
 if not campaigns:
     st.warning("등록된 캠페인이 없습니다. 관리자에게 문의해주세요.")
     st.stop()
 
-campaign_names = [name for name, _ in campaigns]
+campaign_names = [row["campaign_name"] for row in campaigns]
 selected_campaign = st.selectbox(
     "캠페인",
     campaign_names,
@@ -143,8 +116,8 @@ selected_campaign = st.selectbox(
 )
 
 # Load selected guideline
-selected_path = next(fp for name, fp in campaigns if name == selected_campaign)
-campaign_name, guideline = _load_guideline(selected_path)
+selected_row = next(row for row in campaigns if row["campaign_name"] == selected_campaign)
+campaign_name, guideline = db.load_guideline(selected_row["id"])
 
 # Show brief guideline info
 with st.expander("가이드라인 요약 보기", expanded=False):
@@ -246,7 +219,7 @@ if review_btn and has_video and has_name and api_ok:
     # Get previous review for comparison
     previous_report = None
     current_round = 1
-    prev = get_previous_review(campaign_id, c_name)
+    prev = db.get_previous_review(campaign_id, c_name)
     if prev:
         previous_report, prev_round = prev
         current_round = prev_round + 1
@@ -301,7 +274,7 @@ if review_btn and has_video and has_name and api_ok:
         )
 
         # Save review history
-        save_review(campaign_id, c_name, report, current_round)
+        db.save_review(campaign_id, c_name, report, current_round)
 
         progress.progress(100, text="검수 완료!")
         st.session_state["creator_report"] = report

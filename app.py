@@ -12,46 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config import ANTHROPIC_API_KEY, OPENAI_API_KEY
 from models.guideline import ParsedGuideline
 from models.review_result import ReviewReport
-from models.review_history import (
-    save_review, get_previous_review, get_next_round, list_review_history,
-)
-
-# --- Saved Guidelines ---
-SAVED_GUIDELINES_DIR = Path(__file__).parent / "saved_guidelines"
-SAVED_GUIDELINES_DIR.mkdir(exist_ok=True)
-
-
-def _list_saved_guidelines() -> list[tuple[str, Path]]:
-    """Return list of (display_name, file_path) sorted by newest first."""
-    files = sorted(SAVED_GUIDELINES_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    result = []
-    for f in files:
-        try:
-            meta = json.loads(f.read_text(encoding="utf-8"))
-            name = meta.get("campaign_name", f.stem)
-            result.append((name, f))
-        except Exception:
-            result.append((f.stem, f))
-    return result
-
-
-def _save_guideline(campaign_name: str, guideline: ParsedGuideline) -> Path:
-    """Save parsed guideline as JSON."""
-    safe_name = "".join(c if c.isalnum() or c in ("-", "_", " ") else "_" for c in campaign_name).strip()
-    filepath = SAVED_GUIDELINES_DIR / f"{safe_name}.json"
-    data = {
-        "campaign_name": campaign_name,
-        "guideline": guideline.model_dump(),
-    }
-    filepath.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    return filepath
-
-
-def _load_guideline(filepath: Path) -> tuple[str, ParsedGuideline]:
-    """Load guideline from JSON file."""
-    data = json.loads(filepath.read_text(encoding="utf-8"))
-    guideline = ParsedGuideline.model_validate(data["guideline"])
-    return data["campaign_name"], guideline
+import db
 
 st.set_page_config(
     page_title="Video Guideline Checker",
@@ -288,20 +249,20 @@ with st.sidebar:
     st.subheader("1. 가이드라인")
 
     # Saved guidelines loader
-    saved_list = _list_saved_guidelines()
+    saved_list = db.list_guidelines()
     if saved_list:
-        saved_names = ["— 새로 업로드 —"] + [name for name, _ in saved_list]
+        saved_names = ["— 새로 업로드 —"] + [row["campaign_name"] for row in saved_list]
         saved_selection = st.selectbox(
             "저장된 가이드라인",
             saved_names,
             key="saved_guideline_select",
         )
         if saved_selection != "— 새로 업로드 —":
-            match = next((fp for name, fp in saved_list if name == saved_selection), None)
-            if match:
+            match_row = next((row for row in saved_list if row["campaign_name"] == saved_selection), None)
+            if match_row:
                 load_btn = st.button("📂 불러오기", key="load_saved_gl", use_container_width=True)
                 if load_btn:
-                    camp_name, loaded_gl = _load_guideline(match)
+                    camp_name, loaded_gl = db.load_guideline(match_row["id"])
                     st.session_state["parsed_guideline"] = loaded_gl
                     st.session_state["guideline_images"] = []
                     st.success(f"'{camp_name}' 가이드라인 불러옴!")
@@ -310,7 +271,7 @@ with st.sidebar:
                 # Delete button
                 del_btn = st.button("🗑️ 삭제", key="delete_saved_gl", use_container_width=True)
                 if del_btn:
-                    match.unlink()
+                    db.delete_guideline(match_row["id"])
                     st.success(f"'{saved_selection}' 삭제됨")
                     st.rerun()
 
@@ -563,7 +524,7 @@ with tab1:
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("💾 가이드라인 저장", use_container_width=True, key="save_gl_btn"):
                     if campaign_name.strip():
-                        _save_guideline(campaign_name.strip(), g)
+                        db.save_guideline(campaign_name.strip(), g)
                         st.session_state["show_save_guideline"] = False
                         st.success(f"'{campaign_name}' 저장 완료! 사이드바에서 불러올 수 있습니다.")
                         st.rerun()
@@ -587,7 +548,7 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
     previous_report = None
     current_round = 1
     if c_name:
-        prev = get_previous_review(campaign_id, c_name)
+        prev = db.get_previous_review(campaign_id, c_name)
         if prev:
             previous_report, prev_round = prev
             current_round = prev_round + 1
@@ -678,7 +639,7 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
         # Save review history
         if c_name:
             for fname, data in all_results.items():
-                save_review(campaign_id, c_name, data["report"], current_round)
+                db.save_review(campaign_id, c_name, data["report"], current_round)
 
         progress_bar.progress(100, text=f"검수 완료! ({num_videos}개 영상)")
         round_msg = f" (Round {current_round})" if current_round > 1 else ""
@@ -1272,17 +1233,18 @@ with tab4:
         if "parsed_guideline" in st.session_state:
             g = st.session_state["parsed_guideline"]
             campaign_id = g.title or g.product_name or "default"
-            history = list_review_history(campaign_id)
+            history = db.list_reviews(campaign_id)
             if history:
                 st.divider()
                 st.markdown("### 📋 검수 이력")
                 for h in history[:10]:
-                    score_color = "🟢" if h["score"] >= 80 else ("🟡" if h["score"] >= 60 else "🔴")
-                    status_icon = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}.get(h["status"], "❓")
-                    ts = h["timestamp"][:16].replace("T", " ") if h["timestamp"] else ""
+                    score = h.get("overall_score", 0)
+                    score_color = "🟢" if score >= 80 else ("🟡" if score >= 60 else "🔴")
+                    status_icon = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}.get(h.get("overall_status", ""), "❓")
+                    ts = h["created_at"][:16].replace("T", " ") if h.get("created_at") else ""
                     st.markdown(
                         f"- {score_color} **{h['creator_name']}** — Round {h['round']} | "
-                        f"점수: {h['score']} {status_icon} | {ts}"
+                        f"점수: {score} {status_icon} | {ts}"
                     )
     else:
         st.info("검수가 완료되면 브랜드사 전달용 코멘트가 생성됩니다.")
