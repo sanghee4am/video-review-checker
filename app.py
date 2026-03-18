@@ -531,6 +531,54 @@ with tab1:
                     else:
                         st.warning("캠페인 이름을 입력해주세요.")
 
+        # --- Creator Link Generator ---
+        st.divider()
+        st.subheader("🔗 크리에이터 전용 링크 생성")
+        st.caption("크리에이터 이름을 입력하면 검수 업로드 전용 링크가 생성됩니다. 링크를 받은 크리에이터는 영상만 올리면 됩니다.")
+
+        saved_campaign_name = g.title or g.product_name or ""
+        # Check if this guideline is saved
+        saved_gl = db.load_guideline_by_name(saved_campaign_name) if saved_campaign_name else None
+        if not saved_gl:
+            # Try with any saved guidelines
+            all_saved = db.list_guidelines()
+            if all_saved:
+                link_campaign = st.selectbox(
+                    "캠페인 선택",
+                    [row["campaign_name"] for row in all_saved],
+                    key="link_campaign_select",
+                )
+            else:
+                st.info("먼저 가이드라인을 저장해주세요.")
+                link_campaign = None
+        else:
+            link_campaign = saved_campaign_name
+
+        if link_campaign:
+            creator_input = st.text_area(
+                "크리에이터 목록",
+                placeholder="한 줄에 하나씩 입력\n예:\n@beauty_creator\n@food_lover\n@tech_review",
+                height=120,
+                key="link_creator_list",
+            )
+
+            if st.button("🔗 링크 생성", use_container_width=True, key="generate_links_btn"):
+                creators = [c.strip() for c in creator_input.strip().split("\n") if c.strip()]
+                if creators:
+                    from urllib.parse import quote
+                    base_url = "https://video-review-checker-2f6utmtejjnlbpi3xy5tsq.streamlit.app/Creator_Upload"
+
+                    link_lines = []
+                    for c in creators:
+                        url = f"{base_url}?campaign={quote(link_campaign)}&creator={quote(c)}"
+                        link_lines.append(f"{c}\n{url}\n")
+
+                    links_text = "\n".join(link_lines)
+                    st.code(links_text, language=None)
+                    st.caption("위 내용을 복사해서 각 크리에이터에게 전달해주세요.")
+                else:
+                    st.warning("크리에이터 이름을 입력해주세요.")
+
     else:
         st.info("👈 사이드바에서 가이드라인 파일을 업로드하고 '가이드라인 파싱' 버튼을 눌러주세요.")
 

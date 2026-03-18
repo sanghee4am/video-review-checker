@@ -93,27 +93,43 @@ st.markdown(
 )
 
 
-# --- Step 1: Campaign Selection ---
-st.markdown(
-    '<div class="step-card">'
-    '<span class="step-num">1</span>'
-    '<span class="step-title">캠페인 선택</span>'
-    '</div>',
-    unsafe_allow_html=True,
-)
+# --- Read URL params (for pre-filled links) ---
+params = st.query_params
+param_campaign = params.get("campaign", "")
+param_creator = params.get("creator", "")
 
+# --- Step 1: Campaign Selection ---
 campaigns = db.list_guidelines()
 if not campaigns:
     st.warning("등록된 캠페인이 없습니다. 관리자에게 문의해주세요.")
     st.stop()
 
 campaign_names = [row["campaign_name"] for row in campaigns]
-selected_campaign = st.selectbox(
-    "캠페인",
-    campaign_names,
-    key="creator_campaign_select",
-    label_visibility="collapsed",
-)
+
+if param_campaign and param_campaign in campaign_names:
+    # Pre-filled from URL — show as fixed info, not selectable
+    selected_campaign = param_campaign
+    st.markdown(
+        f'<div class="step-card">'
+        f'<span class="step-num">1</span>'
+        f'<span class="step-title">캠페인: {selected_campaign}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        '<div class="step-card">'
+        '<span class="step-num">1</span>'
+        '<span class="step-title">캠페인 선택</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    selected_campaign = st.selectbox(
+        "캠페인",
+        campaign_names,
+        key="creator_campaign_select",
+        label_visibility="collapsed",
+    )
 
 # Load selected guideline
 selected_row = next(row for row in campaigns if row["campaign_name"] == selected_campaign)
@@ -134,20 +150,30 @@ with st.expander("가이드라인 요약 보기", expanded=False):
             st.markdown(f"  - {elem}")
 
 # --- Step 2: Creator Info ---
-st.markdown(
-    '<div class="step-card">'
-    '<span class="step-num">2</span>'
-    '<span class="step-title">크리에이터 정보</span>'
-    '</div>',
-    unsafe_allow_html=True,
-)
-
-creator_name = st.text_input(
-    "이름 / 채널명",
-    placeholder="예: @creator_name",
-    key="creator_self_name",
-    label_visibility="collapsed",
-)
+if param_creator:
+    # Pre-filled from URL — show as fixed info
+    creator_name = param_creator
+    st.markdown(
+        f'<div class="step-card">'
+        f'<span class="step-num">2</span>'
+        f'<span class="step-title">크리에이터: {creator_name}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        '<div class="step-card">'
+        '<span class="step-num">2</span>'
+        '<span class="step-title">크리에이터 정보</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    creator_name = st.text_input(
+        "이름 / 채널명",
+        placeholder="예: @creator_name",
+        key="creator_self_name",
+        label_visibility="collapsed",
+    )
 
 # --- Step 3: Video Upload ---
 st.markdown(
