@@ -39,6 +39,7 @@ class ReviewReport(BaseModel):
     rule_reviews: List[RuleReview] = Field(default_factory=list)
     mandatory_check: Dict[str, bool] = Field(default_factory=dict, description="Mandatory element check results")
     revision_items: List[str] = Field(default_factory=list, description="List of items needing revision")
-    email_draft: str = Field(default="", description="Draft email for revision request")
+    email_draft: str = Field(default="", description="Draft email for revision request in Korean")
+    email_draft_en: str = Field(default="", description="Draft email for revision request in English")
     manual_review_flags: List[str] = Field(default_factory=list, description="Items that need manual human review")
     editing_tips: List[EditingTip] = Field(default_factory=list, description="CapCut editing tips for creator")

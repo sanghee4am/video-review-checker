@@ -171,7 +171,7 @@ Return ONLY valid JSON:
       "sfx_names": ["SFX 이름 (해당 시에만)", "예: Cartoon → Scribble", "Transition → Swoosh 2"]
     }}
   ],
-  "email_draft": "Professional revision request email in Korean.\\nInclude:\\n- Greeting\\n- What was done well\\n- Specific revision items\\n- Closing"
+  "email_draft": "SKIP - will be generated separately"
 }}
 
 IMPORTANT:
@@ -192,6 +192,122 @@ IMPORTANT:
   - Categories to cover: 기본 자막, 강조 텍스트, 특수효과/스티커, 레이아웃, 전환, 효과음 등
   - Think like a CapCut power user teaching a beginner creator.
 """
+
+
+EMAIL_GENERATION_PROMPT = """You are a professional influencer campaign manager writing a revision request email to a creator.
+
+You are given:
+1. The review results (score, status, scene reviews, rule violations, revision items)
+2. The guideline title and product name
+
+=== COMMUNICATION PRINCIPLES ===
+
+**Tone:**
+- Warm, collaborative, and respectful — the creator is a valued partner, not an employee
+- Start by genuinely acknowledging what they did well (be specific, not generic)
+- Frame revisions as "small adjustments to make the content even better" not "things you did wrong"
+- Use encouraging language: "~하면 더 좋을 것 같아요", "~부분만 살짝 수정 부탁드려요"
+- End with enthusiasm about the final result
+
+**Structure:**
+- Greeting (friendly, use 크리에이터님 or the tone appropriate for each language)
+- Genuine compliment on specific strong points (cite actual scenes/moments)
+- Clear revision items — numbered, specific, actionable
+  - For each item: what to change + why (briefly) + how (if applicable)
+  - Distinguish between MUST-FIX (가이드라인 필수) and NICE-TO-HAVE (권장)
+- If reshoot is needed: be empathetic, explain why it's necessary, offer flexibility
+- Timeline/next steps
+- Warm closing
+
+**Revision severity levels (include in both languages):**
+- 🔴 필수 수정 (Must fix): Guideline violations that must be corrected
+- 🟡 권장 수정 (Recommended): Would improve the content but not strictly required
+- 🟢 참고 사항 (FYI): Minor notes for future reference
+
+**For RESHOOT scenarios:**
+- Be extra empathetic: "촬영을 다시 부탁드리게 되어 정말 죄송합니다"
+- Clearly explain what specifically needs reshooting and why
+- Suggest ways to minimize reshoot effort (e.g., "해당 장면만 다시 촬영해주시면 됩니다")
+
+=== OUTPUT FORMAT ===
+Return ONLY valid JSON:
+{{
+  "email_ko": "Full Korean email with proper line breaks (use \\n for newlines)",
+  "email_en": "Full English email with proper line breaks (use \\n for newlines)"
+}}
+
+Generate both versions. The English version should NOT be a direct translation — adapt the tone and phrasing naturally for English-speaking creators while keeping the same information.
+"""
+
+
+def _generate_revision_email(
+    client,
+    report: ReviewReport,
+    guideline: ParsedGuideline,
+) -> tuple[str, str]:
+    """Generate polished revision emails in Korean and English.
+
+    Returns (email_ko, email_en).
+    """
+    # Build context for email generation
+    review_summary = {
+        "score": report.overall_score,
+        "status": report.overall_status,
+        "summary": report.summary,
+        "revision_items": report.revision_items,
+        "scene_issues": [
+            {
+                "scene": sr.scene_number,
+                "status": sr.status,
+                "time": sr.matched_time_range,
+                "findings": sr.findings,
+                "suggestion": sr.suggestion,
+            }
+            for sr in report.scene_reviews
+            if sr.status in ("fail", "warning")
+        ],
+        "rule_violations": [
+            {
+                "category": rr.rule_category,
+                "rule": rr.rule_description,
+                "status": rr.status,
+                "evidence": rr.evidence,
+                "suggestion": rr.suggestion,
+            }
+            for rr in report.rule_reviews
+            if rr.status in ("violated", "unclear")
+        ],
+        "passed_scenes": [
+            {
+                "scene": sr.scene_number,
+                "time": sr.matched_time_range,
+                "findings": sr.findings,
+            }
+            for sr in report.scene_reviews
+            if sr.status == "pass"
+        ],
+        "needs_reshoot": report.overall_score < 55,
+    }
+
+    content = [
+        {
+            "type": "text",
+            "text": (
+                f"=== GUIDELINE INFO ===\n"
+                f"Title: {guideline.title}\n"
+                f"Product: {guideline.product_name}\n"
+                f"Concept: {guideline.concept}\n"
+                f"\n=== REVIEW RESULTS ===\n"
+                f"{json.dumps(review_summary, ensure_ascii=False, indent=2)}\n"
+                f"\n{EMAIL_GENERATION_PROMPT}"
+            ),
+        }
+    ]
+
+    response = _call_claude_with_retry(client, content, max_tokens=4096)
+    result = _parse_json_response(response.content[0].text)
+
+    return result.get("email_ko", ""), result.get("email_en", "")
 
 
 def _build_frame_content_for_batch(frames) -> list:
@@ -286,7 +402,7 @@ def run_compliance_check(
         batches.append(video.frames[i:i + frames_per_batch])
 
     num_batches = len(batches)
-    total_steps = num_batches + 2  # batches + final review + done
+    total_steps = num_batches + 3  # batches + final review + email generation + done
 
     if progress_callback:
         progress_callback(0, total_steps,
@@ -388,6 +504,35 @@ def run_compliance_check(
     final_response = _call_claude_with_retry(client, final_content, max_tokens=8192)
     result = _parse_json_response(final_response.content[0].text)
 
+    # --- Phase 3: Generate revision emails (if not approved) ---
+    email_ko = ""
+    email_en = ""
+    status = result.get("overall_status", "revision_needed")
+
+    if status != "approved":
+        if progress_callback:
+            progress_callback(
+                num_batches + 1, total_steps,
+                "수정 안내 이메일 생성 중 (한국어/영어)..."
+            )
+        time.sleep(2)
+
+        # Build a temporary report for email generation
+        temp_report = ReviewReport(
+            overall_score=result.get("overall_score") or 0,
+            overall_status=status,
+            summary=result.get("summary") or "",
+            scene_reviews=[SceneReview(**s) for s in (result.get("scene_reviews") or [])],
+            rule_reviews=[RuleReview(**r) for r in (result.get("rule_reviews") or [])],
+            revision_items=result.get("revision_items") or [],
+        )
+
+        try:
+            email_ko, email_en = _generate_revision_email(client, temp_report, guideline)
+        except Exception:
+            email_ko = result.get("email_draft") or ""
+            email_en = ""
+
     if progress_callback:
         progress_callback(total_steps, total_steps, "검수 완료!")
 
@@ -411,7 +556,8 @@ def run_compliance_check(
         rule_reviews=[RuleReview(**r) for r in filtered_rules],
         mandatory_check=filtered_mandatory,
         revision_items=result.get("revision_items") or [],
-        email_draft=result.get("email_draft") or "",
+        email_draft=email_ko or result.get("email_draft") or "",
+        email_draft_en=email_en,
         manual_review_flags=[str(f) for f in (result.get("manual_review_flags") or [])],
         editing_tips=[
             EditingTip(**{

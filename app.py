@@ -823,7 +823,7 @@ with tab2:
 
             st.divider()
 
-            # --- Revision email (inline, not separate tab) ---
+            # --- Revision email (Korean + English tabs) ---
             st.markdown("### 📧 수정 안내 메일")
             if report.revision_items:
                 st.markdown("**수정 항목 요약:**")
@@ -831,24 +831,56 @@ with tab2:
                     st.markdown(f"{i}. {item}")
                 st.markdown("")
 
-            email_text = st.text_area(
-                "메일 내용 (편집 가능)",
-                value=report.email_draft,
-                height=300,
-                key="email_draft_editor",
-            )
+            email_tab_ko, email_tab_en = st.tabs(["🇰🇷 한국어", "🇺🇸 English"])
 
-            col_dl1, col_dl2, _ = st.columns([1, 1, 2])
-            with col_dl1:
-                st.download_button(
-                    label="📥 메일 다운로드",
-                    data=email_text,
-                    file_name="revision_request.txt",
-                    mime="text/plain",
-                    use_container_width=True,
+            with email_tab_ko:
+                email_text_ko = st.text_area(
+                    "한국어 메일 (편집 가능)",
+                    value=report.email_draft,
+                    height=350,
+                    key="email_draft_ko",
                 )
-            with col_dl2:
-                st.button("📋 클립보드 복사", key="copy_email", use_container_width=True)
+                col_ko1, col_ko2, _ = st.columns([1, 1, 2])
+                with col_ko1:
+                    st.download_button(
+                        label="📥 한국어 메일 다운로드",
+                        data=email_text_ko,
+                        file_name="revision_request_ko.txt",
+                        mime="text/plain",
+                        use_container_width=True,
+                    )
+                with col_ko2:
+                    if st.button("📋 복사", key="copy_email_ko", use_container_width=True):
+                        st.components.v1.html(
+                            f'<script>navigator.clipboard.writeText({json.dumps(email_text_ko)});</script>',
+                            height=0,
+                        )
+                        st.toast("클립보드에 복사되었습니다!")
+
+            with email_tab_en:
+                email_en_value = report.email_draft_en if report.email_draft_en else "(영어 버전이 생성되지 않았습니다. 검수를 다시 실행해주세요.)"
+                email_text_en = st.text_area(
+                    "English email (editable)",
+                    value=email_en_value,
+                    height=350,
+                    key="email_draft_en",
+                )
+                col_en1, col_en2, _ = st.columns([1, 1, 2])
+                with col_en1:
+                    st.download_button(
+                        label="📥 Download English email",
+                        data=email_text_en,
+                        file_name="revision_request_en.txt",
+                        mime="text/plain",
+                        use_container_width=True,
+                    )
+                with col_en2:
+                    if st.button("📋 Copy", key="copy_email_en", use_container_width=True):
+                        st.components.v1.html(
+                            f'<script>navigator.clipboard.writeText({json.dumps(email_text_en)});</script>',
+                            height=0,
+                        )
+                        st.toast("Copied to clipboard!")
 
             st.divider()
 
