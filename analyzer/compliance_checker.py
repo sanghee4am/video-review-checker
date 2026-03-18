@@ -11,7 +11,7 @@ import anthropic
 
 from config import ANTHROPIC_API_KEY, CLAUDE_MODEL
 from models.guideline import ParsedGuideline
-from models.review_result import ReviewReport, SceneReview, RuleReview, EditingTip
+from models.review_result import ReviewReport, SceneReview, RuleReview, EditingTip, RevisionComparison
 from processors.video_processor import ProcessedVideo
 
 # Social media caption items - excluded from video review
@@ -199,6 +199,7 @@ EMAIL_GENERATION_PROMPT = """You are a professional influencer campaign manager 
 You are given:
 1. The review results (score, status, scene reviews, rule violations, revision items)
 2. The guideline title and product name
+3. (If available) Comparison with previous review round — what was fixed and what still needs work
 
 === COMMUNICATION PRINCIPLES ===
 
@@ -211,13 +212,26 @@ You are given:
 
 **Structure:**
 - Greeting (friendly, use 크리에이터님 or the tone appropriate for each language)
+- If this is a RE-REVIEW (round 2+): acknowledge the effort they put into revisions, specifically mention what they fixed well
 - Genuine compliment on specific strong points (cite actual scenes/moments)
 - Clear revision items — numbered, specific, actionable
-  - For each item: what to change + why (briefly) + how (if applicable)
+  - For each item: what to change + WHY with guideline reference + how (if applicable)
   - Distinguish between MUST-FIX (가이드라인 필수) and NICE-TO-HAVE (권장)
 - If reshoot is needed: be empathetic, explain why it's necessary, offer flexibility
 - Timeline/next steps
 - Warm closing
+
+**PUSHBACK-PROOF WRITING (CRITICAL):**
+- For EVERY revision item, cite the specific guideline requirement. Example:
+  - Korean: "가이드라인 Scene 3에 따르면 '제품 클로즈업 5초 이상' 이 필요한데, 현재 약 2초 정도로 확인됩니다."
+  - English: "Per the guideline (Scene 3), a 5+ second product close-up is required, but the current version shows approximately 2 seconds."
+- Pre-emptively explain the REASON behind the requirement when it might seem arbitrary:
+  - "이 부분은 브랜드사에서 특히 중요하게 보는 항목이라 꼭 반영 부탁드려요"
+  - "This is a key requirement from the brand to ensure regulatory compliance"
+- For subjective items, use softened language and offer alternatives:
+  - "이 부분은 이렇게 수정하시거나, 혹은 다른 방식으로 표현해주셔도 괜찮습니다"
+- If an item has been requested before (re-review), be firmer but still respectful:
+  - "이전에도 안내드렸던 부분인데, 이번에도 동일하게 확인됩니다. 가이드라인 필수 사항이라 꼭 수정 부탁드립니다."
 
 **Revision severity levels (include in both languages):**
 - 🔴 필수 수정 (Must fix): Guideline violations that must be corrected
@@ -240,10 +254,41 @@ Generate both versions. The English version should NOT be a direct translation �
 """
 
 
+BRAND_SHEET_PROMPT = """You are generating a concise review comment for a brand review sheet.
+This comment will be pasted into a shared spreadsheet/document for the brand team to review.
+
+Given the review results, generate a structured comment in this format:
+
+**Korean version:**
+[검수 결과] 점수: XX/100 | 상태: 수정필요/승인/반려
+---
+✅ 잘된 점:
+- (specific positive point with timestamp)
+
+❌ 수정 필요:
+1. [XX:XX] (issue description) — 가이드라인 Scene X 기준
+2. [XX:XX] (issue description) — 가이드라인 규칙 위반
+
+⚠️ 확인 필요:
+- (items needing brand's judgment)
+
+**English version:**
+Same structure but in English.
+
+Return ONLY valid JSON:
+{{
+  "comment_ko": "Full Korean comment (use \\n for newlines)",
+  "comment_en": "Full English comment (use \\n for newlines)"
+}}
+"""
+
+
 def _generate_revision_email(
     client,
     report: ReviewReport,
     guideline: ParsedGuideline,
+    previous_report: Optional[ReviewReport] = None,
+    review_round: int = 1,
 ) -> tuple[str, str]:
     """Generate polished revision emails in Korean and English.
 
@@ -255,6 +300,7 @@ def _generate_revision_email(
         "status": report.overall_status,
         "summary": report.summary,
         "revision_items": report.revision_items,
+        "review_round": review_round,
         "scene_issues": [
             {
                 "scene": sr.scene_number,
@@ -289,6 +335,27 @@ def _generate_revision_email(
         "needs_reshoot": report.overall_score < 55,
     }
 
+    # Add comparison with previous review if available
+    comparison_section = ""
+    if previous_report and review_round > 1:
+        comparison = _compare_reviews(previous_report, report)
+        review_summary["comparison"] = [c.model_dump() for c in comparison]
+        comparison_section = (
+            f"\n=== COMPARISON WITH PREVIOUS REVIEW (Round {review_round - 1} → {review_round}) ===\n"
+            f"Previous score: {previous_report.overall_score} → Current score: {report.overall_score}\n"
+            f"{json.dumps([c.model_dump() for c in comparison], ensure_ascii=False, indent=2)}\n"
+        )
+
+    # Add guideline rules for citation
+    guideline_rules_text = "\n=== GUIDELINE RULES (for citation in email) ===\n"
+    for rule in guideline.rules:
+        guideline_rules_text += f"- [{rule.category}] {rule.description} (severity: {rule.severity})\n"
+    for scene in guideline.scenes:
+        guideline_rules_text += f"- [Scene {scene.scene_number}] {scene.description}"
+        if scene.time_range:
+            guideline_rules_text += f" ({scene.time_range})"
+        guideline_rules_text += "\n"
+
     content = [
         {
             "type": "text",
@@ -297,8 +364,10 @@ def _generate_revision_email(
                 f"Title: {guideline.title}\n"
                 f"Product: {guideline.product_name}\n"
                 f"Concept: {guideline.concept}\n"
+                f"{guideline_rules_text}"
                 f"\n=== REVIEW RESULTS ===\n"
                 f"{json.dumps(review_summary, ensure_ascii=False, indent=2)}\n"
+                f"{comparison_section}"
                 f"\n{EMAIL_GENERATION_PROMPT}"
             ),
         }
@@ -308,6 +377,140 @@ def _generate_revision_email(
     result = _parse_json_response(response.content[0].text)
 
     return result.get("email_ko", ""), result.get("email_en", "")
+
+
+def _generate_brand_sheet_comment(
+    client,
+    report: ReviewReport,
+    guideline: ParsedGuideline,
+) -> tuple[str, str]:
+    """Generate formatted comments for brand review sheet.
+
+    Returns (comment_ko, comment_en).
+    """
+    review_data = {
+        "score": report.overall_score,
+        "status": report.overall_status,
+        "summary": report.summary,
+        "scene_reviews": [
+            {
+                "scene": sr.scene_number,
+                "status": sr.status,
+                "time": sr.matched_time_range,
+                "findings": sr.findings,
+                "suggestion": sr.suggestion,
+                "guideline_description": sr.guideline_description,
+            }
+            for sr in report.scene_reviews
+        ],
+        "rule_violations": [
+            {
+                "category": rr.rule_category,
+                "rule": rr.rule_description,
+                "status": rr.status,
+                "evidence": rr.evidence,
+                "suggestion": rr.suggestion,
+            }
+            for rr in report.rule_reviews
+            if rr.status in ("violated", "unclear")
+        ],
+        "manual_review_flags": report.manual_review_flags,
+        "revision_items": report.revision_items,
+    }
+
+    content = [
+        {
+            "type": "text",
+            "text": (
+                f"=== GUIDELINE: {guideline.title} ({guideline.product_name}) ===\n"
+                f"\n=== REVIEW RESULTS ===\n"
+                f"{json.dumps(review_data, ensure_ascii=False, indent=2)}\n"
+                f"\n{BRAND_SHEET_PROMPT}"
+            ),
+        }
+    ]
+
+    response = _call_claude_with_retry(client, content, max_tokens=2048)
+    result = _parse_json_response(response.content[0].text)
+
+    return result.get("comment_ko", ""), result.get("comment_en", "")
+
+
+def _compare_reviews(previous: ReviewReport, current: ReviewReport) -> list[RevisionComparison]:
+    """Compare current review with previous review to find what was fixed."""
+    comparisons = []
+
+    # Compare scene reviews
+    prev_scenes = {sr.scene_number: sr for sr in previous.scene_reviews}
+    curr_scenes = {sr.scene_number: sr for sr in current.scene_reviews}
+
+    for scene_num, prev_sr in prev_scenes.items():
+        if prev_sr.status in ("fail", "warning"):
+            curr_sr = curr_scenes.get(scene_num)
+            if curr_sr:
+                if curr_sr.status == "pass":
+                    status = "fixed"
+                elif curr_sr.status == "warning" and prev_sr.status == "fail":
+                    status = "partially_fixed"
+                else:
+                    status = "still_pending"
+            else:
+                status = "fixed"
+
+            comparisons.append(RevisionComparison(
+                item=f"Scene {scene_num}: {prev_sr.guideline_description}",
+                status=status,
+                previous_finding=prev_sr.findings,
+                current_finding=curr_sr.findings if curr_sr else "",
+            ))
+
+    # Compare rule violations
+    prev_violations = {rr.rule_description: rr for rr in previous.rule_reviews if rr.status == "violated"}
+    curr_rules = {rr.rule_description: rr for rr in current.rule_reviews}
+
+    for rule_desc, prev_rr in prev_violations.items():
+        curr_rr = curr_rules.get(rule_desc)
+        if curr_rr:
+            if curr_rr.status == "compliant":
+                status = "fixed"
+            elif curr_rr.status == "unclear":
+                status = "partially_fixed"
+            else:
+                status = "still_pending"
+        else:
+            status = "fixed"
+
+        comparisons.append(RevisionComparison(
+            item=f"Rule: {rule_desc}",
+            status=status,
+            previous_finding=prev_rr.evidence,
+            current_finding=curr_rr.evidence if curr_rr else "",
+        ))
+
+    # Compare revision items by similarity
+    prev_items = set(previous.revision_items)
+    curr_items = set(current.revision_items)
+    for item in prev_items:
+        if item not in curr_items:
+            # Check if any current item is similar
+            still_there = any(_text_similarity(item, ci) > 0.5 for ci in curr_items)
+            comparisons.append(RevisionComparison(
+                item=item,
+                status="still_pending" if still_there else "fixed",
+                previous_finding=item,
+                current_finding="",
+            ))
+
+    return comparisons
+
+
+def _text_similarity(a: str, b: str) -> float:
+    """Simple word overlap similarity."""
+    words_a = set(a.lower().split())
+    words_b = set(b.lower().split())
+    if not words_a or not words_b:
+        return 0.0
+    return len(words_a & words_b) / max(len(words_a), len(words_b))
 
 
 def _build_frame_content_for_batch(frames) -> list:
@@ -381,6 +584,8 @@ def run_compliance_check(
     video: ProcessedVideo,
     progress_callback=None,
     memo: str = "",
+    previous_report: Optional[ReviewReport] = None,
+    review_round: int = 1,
 ) -> ReviewReport:
     """Run compliance check with ALL frames via batched analysis.
 
@@ -402,7 +607,7 @@ def run_compliance_check(
         batches.append(video.frames[i:i + frames_per_batch])
 
     num_batches = len(batches)
-    total_steps = num_batches + 3  # batches + final review + email generation + done
+    total_steps = num_batches + 4  # batches + final review + email generation + brand sheet + done
 
     if progress_callback:
         progress_callback(0, total_steps,
@@ -507,7 +712,24 @@ def run_compliance_check(
     # --- Phase 3: Generate revision emails (if not approved) ---
     email_ko = ""
     email_en = ""
+    brand_comment_ko = ""
+    brand_comment_en = ""
+    revision_comparison = []
     status = result.get("overall_status", "revision_needed")
+
+    # Build a temporary report for generation
+    temp_report = ReviewReport(
+        overall_score=result.get("overall_score") or 0,
+        overall_status=status,
+        summary=result.get("summary") or "",
+        scene_reviews=[SceneReview(**s) for s in (result.get("scene_reviews") or [])],
+        rule_reviews=[RuleReview(**r) for r in (result.get("rule_reviews") or [])],
+        revision_items=result.get("revision_items") or [],
+    )
+
+    # Compare with previous review if available
+    if previous_report:
+        revision_comparison = _compare_reviews(previous_report, temp_report)
 
     if status != "approved":
         if progress_callback:
@@ -517,21 +739,31 @@ def run_compliance_check(
             )
         time.sleep(2)
 
-        # Build a temporary report for email generation
-        temp_report = ReviewReport(
-            overall_score=result.get("overall_score") or 0,
-            overall_status=status,
-            summary=result.get("summary") or "",
-            scene_reviews=[SceneReview(**s) for s in (result.get("scene_reviews") or [])],
-            rule_reviews=[RuleReview(**r) for r in (result.get("rule_reviews") or [])],
-            revision_items=result.get("revision_items") or [],
-        )
-
         try:
-            email_ko, email_en = _generate_revision_email(client, temp_report, guideline)
+            email_ko, email_en = _generate_revision_email(
+                client, temp_report, guideline,
+                previous_report=previous_report,
+                review_round=review_round,
+            )
         except Exception:
             email_ko = result.get("email_draft") or ""
             email_en = ""
+
+    # --- Phase 3.5: Generate brand sheet comment ---
+    if progress_callback:
+        progress_callback(
+            num_batches + 2, total_steps,
+            "브랜드사 전달용 코멘트 생성 중..."
+        )
+    time.sleep(2)
+
+    try:
+        brand_comment_ko, brand_comment_en = _generate_brand_sheet_comment(
+            client, temp_report, guideline
+        )
+    except Exception:
+        brand_comment_ko = ""
+        brand_comment_en = ""
 
     if progress_callback:
         progress_callback(total_steps, total_steps, "검수 완료!")
@@ -569,6 +801,10 @@ def run_compliance_check(
             })
             for t in (result.get("editing_tips") or [])
         ],
+        brand_sheet_comment=brand_comment_ko,
+        brand_sheet_comment_en=brand_comment_en,
+        revision_comparison=revision_comparison,
+        review_round=review_round,
     )
 
     return report

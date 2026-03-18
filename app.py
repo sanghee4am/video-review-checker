@@ -12,6 +12,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config import ANTHROPIC_API_KEY, OPENAI_API_KEY
 from models.guideline import ParsedGuideline
 from models.review_result import ReviewReport
+from models.review_history import (
+    save_review, get_previous_review, get_next_round, list_review_history,
+)
 
 # --- Saved Guidelines ---
 SAVED_GUIDELINES_DIR = Path(__file__).parent / "saved_guidelines"
@@ -267,6 +270,11 @@ st.markdown("""
     .capcut-path-inline { font-size: 11px; color: #999; margin-top: 4px; }
     .capcut-path-inline .pa { color: #ccc; margin: 0 3px; }
     .td-empty { color: #ddd; text-align: center; }
+
+    /* ===== Upload Check ===== */
+    .upload-result { margin: 8px 0; }
+    .upload-found { color: #16a34a; }
+    .upload-missing { color: #dc2626; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -357,7 +365,29 @@ with st.sidebar:
         key="video_upload",
     )
 
-    st.subheader("3. 메모 (선택)")
+    st.subheader("3. 크리에이터 정보")
+    creator_name = st.text_input(
+        "크리에이터 이름/채널명",
+        placeholder="예: @creator_name",
+        key="creator_name",
+    )
+    st.caption("이전 검수 이력과 비교하려면 동일한 이름을 사용하세요.")
+
+    # Show previous review info if available
+    if creator_name and "parsed_guideline" in st.session_state:
+        g = st.session_state["parsed_guideline"]
+        campaign_id = g.title or g.product_name or "default"
+        prev = get_previous_review(campaign_id, creator_name)
+        if prev:
+            prev_report, prev_round = prev
+            st.info(
+                f"📋 이전 검수 이력 발견! (Round {prev_round}, "
+                f"점수: {prev_report.overall_score}점, "
+                f"상태: {prev_report.overall_status})\n"
+                f"→ 이번 검수는 **Round {prev_round + 1}**로 진행됩니다."
+            )
+
+    st.subheader("4. 메모 (선택)")
     review_memo = st.text_area(
         "가이드라인 보충/수정 사항",
         placeholder="예: CTA 문구는 말하지 않아도 됨\n예: B&A는 선택사항으로 변경됨",
@@ -397,7 +427,10 @@ with st.sidebar:
     )
 
 # --- Main Area ---
-tab1, tab2, tab3 = st.tabs(["📋 가이드라인", "🔍 검수 결과", "🎨 편집 팁"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📋 가이드라인", "🔍 검수 결과", "🎨 편집 팁",
+    "📊 브랜드사 전달", "🔗 업로드 확인",
+])
 
 # ===== Guideline Parsing =====
 if parse_btn and has_guideline_input:
@@ -529,6 +562,17 @@ if review_btn and video_files and "parsed_guideline" in st.session_state:
     guideline = st.session_state["parsed_guideline"]
     guideline_images = st.session_state.get("guideline_images", [])
     num_videos = len(video_files)
+    c_name = st.session_state.get("creator_name", "").strip()
+    campaign_id = guideline.title or guideline.product_name or "default"
+
+    # Get previous review for comparison
+    previous_report = None
+    current_round = 1
+    if c_name:
+        prev = get_previous_review(campaign_id, c_name)
+        if prev:
+            previous_report, prev_round = prev
+            current_round = prev_round + 1
 
     progress_bar = st.progress(0, text=f"영상 {num_videos}개 처리 준비 중...")
 
@@ -573,6 +617,8 @@ if review_btn and video_files and "parsed_guideline" in st.session_state:
                 video=processed_video,
                 progress_callback=update_progress,
                 memo=memo,
+                previous_report=previous_report,
+                review_round=current_round,
             )
 
             all_results[filename] = {
@@ -586,8 +632,14 @@ if review_btn and video_files and "parsed_guideline" in st.session_state:
         st.session_state["review_report"] = all_results[first_key]["report"]
         st.session_state["selected_video"] = first_key
 
+        # Save review history
+        if c_name:
+            for fname, data in all_results.items():
+                save_review(campaign_id, c_name, data["report"], current_round)
+
         progress_bar.progress(100, text=f"검수 완료! ({num_videos}개 영상)")
-        st.success(f"검수가 완료되었습니다! {num_videos}개 영상의 결과를 '검수 결과' 탭에서 확인하세요.")
+        round_msg = f" (Round {current_round})" if current_round > 1 else ""
+        st.success(f"검수가 완료되었습니다!{round_msg} {num_videos}개 영상의 결과를 '검수 결과' 탭에서 확인하세요.")
 
     except Exception as e:
         progress_bar.empty()
@@ -820,6 +872,36 @@ with tab2:
                         f'<div class="manual-flag">🔍 {flag}{flag_frames}</div>',
                         unsafe_allow_html=True,
                     )
+
+            # --- Revision Comparison (re-review) ---
+            if report.revision_comparison:
+                st.markdown("### 🔄 이전 검수 대비 변경사항")
+                st.markdown(f"**Review Round {report.review_round}**")
+
+                comp_fixed = [c for c in report.revision_comparison if c.status == "fixed"]
+                comp_partial = [c for c in report.revision_comparison if c.status == "partially_fixed"]
+                comp_pending = [c for c in report.revision_comparison if c.status == "still_pending"]
+
+                if comp_fixed:
+                    st.markdown(f"**✅ 수정 완료 ({len(comp_fixed)}건)**")
+                    for c in comp_fixed:
+                        st.markdown(f"- ✅ ~~{c.item}~~")
+
+                if comp_partial:
+                    st.markdown(f"**🟡 부분 수정 ({len(comp_partial)}건)**")
+                    for c in comp_partial:
+                        st.markdown(f"- 🟡 {c.item}")
+                        if c.current_finding:
+                            st.caption(f"   현재: {c.current_finding[:100]}")
+
+                if comp_pending:
+                    st.markdown(f"**❌ 아직 미수정 ({len(comp_pending)}건)**")
+                    for c in comp_pending:
+                        st.markdown(f"- ❌ {c.item}")
+                        if c.previous_finding:
+                            st.caption(f"   이전 지적: {c.previous_finding[:100]}")
+
+                st.divider()
 
             st.divider()
 
@@ -1081,3 +1163,143 @@ with tab3:
             st.info("검수가 완료되면 편집 팁이 생성됩니다.")
     else:
         st.info("검수가 완료되면 편집 팁이 생성됩니다.")
+
+
+# ===== Tab 4: Brand Sheet Comment =====
+with tab4:
+    if "review_report" in st.session_state:
+        report: ReviewReport = st.session_state["review_report"]
+
+        st.markdown("### 📊 브랜드사 전달용 코멘트")
+        st.caption("검수 결과를 브랜드사 공유 시트에 붙여넣을 수 있는 형태로 정리했습니다.")
+
+        brand_tab_ko, brand_tab_en = st.tabs(["🇰🇷 한국어", "🇺🇸 English"])
+
+        with brand_tab_ko:
+            brand_ko = report.brand_sheet_comment or "(브랜드 코멘트가 생성되지 않았습니다.)"
+            brand_text_ko = st.text_area(
+                "한국어 코멘트 (편집 가능)",
+                value=brand_ko,
+                height=300,
+                key="brand_comment_ko",
+            )
+            col_bk1, col_bk2, _ = st.columns([1, 1, 2])
+            with col_bk1:
+                st.download_button(
+                    label="📥 다운로드",
+                    data=brand_text_ko,
+                    file_name="brand_comment_ko.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                )
+            with col_bk2:
+                if st.button("📋 복사", key="copy_brand_ko", use_container_width=True):
+                    st.components.v1.html(
+                        f'<script>navigator.clipboard.writeText({json.dumps(brand_text_ko)});</script>',
+                        height=0,
+                    )
+                    st.toast("클립보드에 복사되었습니다!")
+
+        with brand_tab_en:
+            brand_en = report.brand_sheet_comment_en or "(English comment not generated.)"
+            brand_text_en = st.text_area(
+                "English comment (editable)",
+                value=brand_en,
+                height=300,
+                key="brand_comment_en",
+            )
+            col_be1, col_be2, _ = st.columns([1, 1, 2])
+            with col_be1:
+                st.download_button(
+                    label="📥 Download",
+                    data=brand_text_en,
+                    file_name="brand_comment_en.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                )
+            with col_be2:
+                if st.button("📋 Copy", key="copy_brand_en", use_container_width=True):
+                    st.components.v1.html(
+                        f'<script>navigator.clipboard.writeText({json.dumps(brand_text_en)});</script>',
+                        height=0,
+                    )
+                    st.toast("Copied to clipboard!")
+
+        # Review history section
+        if "parsed_guideline" in st.session_state:
+            g = st.session_state["parsed_guideline"]
+            campaign_id = g.title or g.product_name or "default"
+            history = list_review_history(campaign_id)
+            if history:
+                st.divider()
+                st.markdown("### 📋 검수 이력")
+                for h in history[:10]:
+                    score_color = "🟢" if h["score"] >= 80 else ("🟡" if h["score"] >= 60 else "🔴")
+                    status_icon = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}.get(h["status"], "❓")
+                    ts = h["timestamp"][:16].replace("T", " ") if h["timestamp"] else ""
+                    st.markdown(
+                        f"- {score_color} **{h['creator_name']}** — Round {h['round']} | "
+                        f"점수: {h['score']} {status_icon} | {ts}"
+                    )
+    else:
+        st.info("검수가 완료되면 브랜드사 전달용 코멘트가 생성됩니다.")
+
+
+# ===== Tab 5: Upload Check =====
+with tab5:
+    st.markdown("### 🔗 업로드 후 확인")
+    st.caption("크리에이터가 업로드한 게시물의 캡션에 필수 요소(해시태그, 멘션, 광고 표시 등)가 포함되었는지 확인합니다.")
+
+    post_content = st.text_area(
+        "게시물 캡션 붙여넣기",
+        placeholder="크리에이터가 업로드한 게시물의 캡션/설명을 여기에 붙여넣으세요.\n\n예:\n오늘도 피부 관리! #광고 #skincare @brandname ...",
+        height=200,
+        key="upload_check_content",
+    )
+
+    check_btn = st.button(
+        "🔍 캡션 확인",
+        disabled=not (post_content and "parsed_guideline" in st.session_state),
+        use_container_width=True,
+        key="upload_check_btn",
+    )
+
+    if check_btn and post_content and "parsed_guideline" in st.session_state:
+        from analyzer.upload_checker import check_upload
+
+        guideline = st.session_state["parsed_guideline"]
+        with st.spinner("캡션 필수 요소 확인 중..."):
+            try:
+                result = check_upload(post_content, guideline)
+                st.session_state["upload_check_result"] = result
+            except Exception as e:
+                st.error(f"확인 오류: {e}")
+
+    if "upload_check_result" in st.session_state:
+        result = st.session_state["upload_check_result"]
+        all_passed = result.get("all_passed", False)
+
+        if all_passed:
+            st.success("✅ 모든 필수 요소가 확인되었습니다!")
+        else:
+            st.warning("⚠️ 누락된 항목이 있습니다.")
+
+        checks = result.get("checks", [])
+        if checks:
+            for check in checks:
+                status = check.get("status", "")
+                element = check.get("element", "")
+                detail = check.get("detail", "")
+
+                if status == "found":
+                    st.markdown(f"- ✅ **{element}** — {detail}")
+                elif status == "missing":
+                    st.markdown(f"- ❌ **{element}** — {detail}")
+                else:
+                    st.markdown(f"- 🟡 **{element}** — {detail}")
+
+        st.markdown("---")
+        st.markdown(f"**요약:** {result.get('summary_ko', '')}")
+
+    elif not ("parsed_guideline" in st.session_state):
+        st.info("가이드라인을 먼저 파싱해주세요. 가이드라인의 필수 요소를 기준으로 확인합니다.")

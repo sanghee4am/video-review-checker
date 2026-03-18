@@ -16,6 +16,7 @@ Thumbs.db
 
 # Saved data (local only)
 saved_guidelines/
+review_history/
 
 # IDE
 .vscode/

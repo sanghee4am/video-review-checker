@@ -31,6 +31,13 @@ class EditingTip(BaseModel):
     sfx_names: List[str] = Field(default_factory=list, description="Recommended CapCut SFX names (e.g. 'Cartoon → Scribble')")
 
 
+class RevisionComparison(BaseModel):
+    item: str = Field(description="Revision item description")
+    status: str = Field(description="'fixed', 'still_pending', or 'partially_fixed'")
+    previous_finding: str = Field(default="", description="What was found in previous review")
+    current_finding: str = Field(default="", description="What is found in current review")
+
+
 class ReviewReport(BaseModel):
     overall_score: int = Field(default=0, description="Score 0-100")
     overall_status: str = Field(default="pending", description="'approved', 'revision_needed', or 'rejected'")
@@ -43,3 +50,7 @@ class ReviewReport(BaseModel):
     email_draft_en: str = Field(default="", description="Draft email for revision request in English")
     manual_review_flags: List[str] = Field(default_factory=list, description="Items that need manual human review")
     editing_tips: List[EditingTip] = Field(default_factory=list, description="CapCut editing tips for creator")
+    brand_sheet_comment: str = Field(default="", description="Formatted comment for brand review sheet")
+    brand_sheet_comment_en: str = Field(default="", description="Formatted comment for brand review sheet in English")
+    revision_comparison: List[RevisionComparison] = Field(default_factory=list, description="Comparison with previous review")
+    review_round: int = Field(default=1, description="Review round number")
