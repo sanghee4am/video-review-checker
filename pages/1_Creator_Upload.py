@@ -276,12 +276,12 @@ if review_btn and has_video and has_name and api_ok:
             tmp_path.unlink(missing_ok=True)
             st.success(f"다운로드 완료: {filename} ({len(video_bytes) // (1024*1024)}MB)")
         else:
-            filename = video_files.name
+            filename = str(video_files.name)
             video_bytes = video_files.read()
 
         # --- Process video ---
         progress.progress(25, text="영상 분석 중 (프레임 추출 + 음성 인식)...")
-        processed_video = process_video(filename, video_bytes)
+        processed_video = process_video(str(filename), video_bytes)
 
         # --- Run compliance check ---
         guideline_images = []  # Creator page doesn't have guideline images in session
