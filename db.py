@@ -107,7 +107,7 @@ def save_review(
     round_num: int = 1,
     campaign_id: Optional[int] = None,
 ) -> int:
-    """Save a review result. Returns the row ID."""
+    """Save a review result. Auto-approves if score >= 90 and no manual flags. Returns the row ID."""
     sb = _get_client()
     data = {
         "campaign_name": campaign_name,
@@ -119,6 +119,9 @@ def save_review(
     }
     if campaign_id:
         data["campaign_id"] = campaign_id
+    # 90+ with no manual flags → auto-approve
+    if report.overall_score >= 90 and not report.manual_review_flags:
+        data["admin_decision"] = "auto_approved"
     result = sb.table("vc_reviews").insert(data).execute()
     return result.data[0]["id"]
 
@@ -171,12 +174,12 @@ def list_reviews(campaign_name: str) -> list[dict]:
 def get_submission_status(campaign_name: str) -> list[dict]:
     """Get latest submission per creator for a campaign.
 
-    Returns list of {creator_name, round, overall_score, overall_status, created_at}.
+    Returns list of {creator_name, round, overall_score, overall_status, created_at, ...}.
     """
     sb = _get_client()
     result = (
         sb.table("vc_reviews")
-        .select("id, creator_name, round, overall_score, overall_status, created_at, admin_decision, brand_feedback")
+        .select("id, creator_name, round, overall_score, overall_status, created_at, admin_decision, brand_feedback, caption_check_result")
         .eq("campaign_name", campaign_name)
         .order("created_at", desc=True)
         .execute()
@@ -194,12 +197,12 @@ def get_submission_status(campaign_name: str) -> list[dict]:
 def get_creator_reviews(campaign_name: str, creator_name: str) -> list[dict]:
     """Get all reviews for a specific creator in a campaign, newest first.
 
-    Returns list of {id, round, overall_score, overall_status, created_at, report_json}.
+    Returns list of {id, round, overall_score, overall_status, created_at, report_json, ...}.
     """
     sb = _get_client()
     result = (
         sb.table("vc_reviews")
-        .select("id, round, overall_score, overall_status, created_at, report_json, admin_decision, admin_memo, brand_feedback")
+        .select("id, round, overall_score, overall_status, created_at, report_json, admin_decision, admin_memo, brand_feedback, caption_check_result")
         .eq("campaign_name", campaign_name)
         .eq("creator_name", creator_name)
         .order("created_at", desc=True)
@@ -248,3 +251,68 @@ def save_brand_feedback(review_id: int, feedback: str) -> None:
     sb.table("vc_reviews").update({
         "brand_feedback": feedback,
     }).eq("id", review_id).execute()
+
+
+def save_caption_check(review_id: int, result: dict) -> None:
+    """Save caption check result on a review (updates vc_reviews row).
+
+    Column: caption_check_result (jsonb)
+    """
+    sb = _get_client()
+    sb.table("vc_reviews").update({
+        "caption_check_result": result,
+    }).eq("id", review_id).execute()
+
+
+def get_campaigns_summary() -> list[dict]:
+    """Get summary stats for all campaigns.
+
+    Returns list of {campaign_name, total_creators, avg_score, approved, revision_needed, rejected}.
+    """
+    sb = _get_client()
+    result = (
+        sb.table("vc_reviews")
+        .select("campaign_name, creator_name, overall_score, overall_status, admin_decision, caption_check_result, created_at")
+        .order("created_at", desc=True)
+        .execute()
+    )
+    # Aggregate per campaign (latest per creator only)
+    from collections import defaultdict
+    campaigns: dict[str, dict] = {}
+    seen: dict[str, set] = defaultdict(set)
+
+    for row in result.data:
+        cn = row["campaign_name"]
+        cr = row["creator_name"]
+        if cr in seen[cn]:
+            continue
+        seen[cn].add(cr)
+        if cn not in campaigns:
+            campaigns[cn] = {
+                "campaign_name": cn,
+                "total_creators": 0,
+                "scores": [],
+                "approved": 0,
+                "revision_needed": 0,
+                "rejected": 0,
+                "caption_done": 0,
+            }
+        c = campaigns[cn]
+        c["total_creators"] += 1
+        c["scores"].append(row["overall_score"] or 0)
+        ad = row.get("admin_decision") or row.get("overall_status") or ""
+        if ad in ("approved", "auto_approved"):
+            c["approved"] += 1
+        elif ad == "revision_needed":
+            c["revision_needed"] += 1
+        elif ad == "rejected":
+            c["rejected"] += 1
+        if row.get("caption_check_result"):
+            c["caption_done"] += 1
+
+    summaries = []
+    for c in campaigns.values():
+        c["avg_score"] = round(sum(c["scores"]) / len(c["scores"])) if c["scores"] else 0
+        del c["scores"]
+        summaries.append(c)
+    return summaries

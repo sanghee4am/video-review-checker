@@ -136,6 +136,20 @@ TEXTS = {
         "brand_feedback_round": "라운드 {round}",
         "brand_feedback_date": "전달일시",
         "brand_feedback_empty": "전달된 브랜드 피드백이 없습니다.",
+        "admin_approved": "✅ 어드민 최종 승인",
+        "admin_auto_approved": "🤖 자동 승인 (90점+)",
+        "admin_revision": "📝 어드민 수정 요청",
+        "admin_rejected": "❌ 어드민 반려",
+        "admin_memo_label": "어드민 메모",
+        "step_upload": "영상 업로드",
+        "step_ai_review": "AI 검수",
+        "step_admin": "어드민 확인",
+        "step_caption": "캡션 검수",
+        "step_done": "완료",
+        "new_feedback_alert": "💬 새로운 브랜드 피드백이 있습니다! 아래에서 확인하세요.",
+        "priority_high": "🔴 필수 수정",
+        "priority_medium": "🟡 권장 수정",
+        "priority_low": "🟢 참고",
     },
     "en": {
         "hero_title": "Video Review Upload",
@@ -245,6 +259,20 @@ TEXTS = {
         "brand_feedback_round": "Round {round}",
         "brand_feedback_date": "Date",
         "brand_feedback_empty": "No brand feedback received.",
+        "admin_approved": "✅ Admin Approved",
+        "admin_auto_approved": "🤖 Auto-Approved (90+)",
+        "admin_revision": "📝 Admin Revision Requested",
+        "admin_rejected": "❌ Admin Rejected",
+        "admin_memo_label": "Admin Memo",
+        "step_upload": "Upload",
+        "step_ai_review": "AI Review",
+        "step_admin": "Admin Check",
+        "step_caption": "Caption Check",
+        "step_done": "Done",
+        "new_feedback_alert": "💬 New brand feedback received! Check below.",
+        "priority_high": "🔴 Must Fix",
+        "priority_medium": "🟡 Suggested",
+        "priority_low": "🟢 FYI",
     },
 }
 
@@ -378,6 +406,44 @@ st.markdown("""
     .capcut-path-inline { font-size: 11px; color: #999; margin-top: 4px; }
     .capcut-path-inline .pa { color: #ccc; margin: 0 3px; }
     .td-empty { color: #ddd; text-align: center; }
+
+    /* ===== Step Indicator ===== */
+    .step-indicator {
+        display: flex; align-items: center; justify-content: center;
+        gap: 0; margin: 0 auto 24px auto; max-width: 600px;
+    }
+    .step-dot {
+        width: 32px; height: 32px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 13px; font-weight: 700; flex-shrink: 0;
+    }
+    .step-dot-done { background: #22c55e; color: #fff; }
+    .step-dot-active { background: #667eea; color: #fff; box-shadow: 0 0 0 4px rgba(102,126,234,0.3); }
+    .step-dot-pending { background: #e2e8f0; color: #94a3b8; }
+    .step-line { flex: 1; height: 3px; min-width: 20px; }
+    .step-line-done { background: #22c55e; }
+    .step-line-pending { background: #e2e8f0; }
+    .step-label {
+        font-size: 10px; text-align: center; margin-top: 4px;
+        color: #64748b; white-space: nowrap;
+    }
+    .step-item { display: flex; flex-direction: column; align-items: center; }
+
+    /* ===== Alert Badge ===== */
+    .feedback-alert {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        border: 1px solid #f59e0b; border-radius: 12px;
+        padding: 12px 20px; margin-bottom: 16px;
+        font-size: 14px; font-weight: 600; color: #92400e;
+    }
+    .admin-badge {
+        display: inline-block; padding: 4px 12px; border-radius: 20px;
+        font-size: 12px; font-weight: 700; margin: 4px 2px;
+    }
+    .admin-badge-approved { background: #dcfce7; color: #166534; }
+    .admin-badge-auto { background: #dbeafe; color: #1e40af; }
+    .admin-badge-revision { background: #fef3c7; color: #92400e; }
+    .admin-badge-rejected { background: #fee2e2; color: #991b1b; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -408,6 +474,60 @@ st.markdown(
     '</div>',
     unsafe_allow_html=True,
 )
+
+
+# --- Helper: compute current workflow phase ---
+def _compute_phase(history: list[dict]) -> int:
+    """Return phase 1-5 based on review history.
+    1=Upload, 2=AI Review done, 3=Admin checked, 4=Caption done, 5=All done
+    """
+    if not history:
+        return 1
+    latest = history[0]  # newest first
+    ad = latest.get("admin_decision")
+    cap = latest.get("caption_check_result")
+    status = latest.get("overall_status", "")
+    if cap and isinstance(cap, dict) and cap.get("all_passed"):
+        return 5  # all done
+    if ad in ("approved", "auto_approved"):
+        return 4  # ready for caption
+    if ad:
+        return 3  # admin decided (revision/rejected)
+    if status:
+        return 2  # AI review done, waiting admin
+    return 1
+
+
+def _render_step_indicator(phase: int):
+    """Render the 5-step progress indicator."""
+    steps = [
+        t("step_upload"), t("step_ai_review"), t("step_admin"),
+        t("step_caption"), t("step_done"),
+    ]
+    parts = []
+    for i, label in enumerate(steps):
+        step_num = i + 1
+        if step_num < phase:
+            dot_cls = "step-dot-done"
+            icon = "✓"
+        elif step_num == phase:
+            dot_cls = "step-dot-active"
+            icon = str(step_num)
+        else:
+            dot_cls = "step-dot-pending"
+            icon = str(step_num)
+        parts.append(
+            f'<div class="step-item">'
+            f'<div class="step-dot {dot_cls}">{icon}</div>'
+            f'<div class="step-label">{label}</div></div>'
+        )
+        if i < len(steps) - 1:
+            line_cls = "step-line-done" if step_num < phase else "step-line-pending"
+            parts.append(f'<div class="step-line {line_cls}"></div>')
+    st.markdown(
+        f'<div class="step-indicator">{"".join(parts)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # --- Read URL params (for pre-filled links) ---
@@ -539,11 +659,39 @@ if not has_name:
 elif not has_video:
     st.info(t("upload_video"))
 
-# --- Review History ---
+# --- Review History + Step Indicator ---
 _history = []
 if has_name:
     _campaign_id = guideline.title or guideline.product_name or "default"
     _history = db.get_creator_reviews(_campaign_id, creator_name.strip())
+
+    # Step indicator
+    current_phase = _compute_phase(_history)
+    _render_step_indicator(current_phase)
+
+    # New feedback alert
+    _fb_reviews = [r for r in _history if r.get("brand_feedback")]
+    if _fb_reviews:
+        st.markdown(f'<div class="feedback-alert">{t("new_feedback_alert")}</div>', unsafe_allow_html=True)
+
+    # Admin decision alert (latest)
+    if _history:
+        _latest_ad = _history[0].get("admin_decision")
+        _ad_labels = {
+            "approved": ("admin_approved", "admin-badge-approved"),
+            "auto_approved": ("admin_auto_approved", "admin-badge-auto"),
+            "revision_needed": ("admin_revision", "admin-badge-revision"),
+            "rejected": ("admin_rejected", "admin-badge-rejected"),
+        }
+        if _latest_ad and _latest_ad in _ad_labels:
+            _lbl_key, _badge_cls = _ad_labels[_latest_ad]
+            st.markdown(
+                f'<div class="admin-badge {_badge_cls}">{t(_lbl_key)}</div>',
+                unsafe_allow_html=True,
+            )
+            if _history[0].get("admin_memo"):
+                st.caption(f"{t('admin_memo_label')}: {_history[0]['admin_memo']}")
+
     if _history:
         with st.expander(f"📋 {t('history_title')} ({len(_history)})", expanded=False):
             status_map = {
@@ -551,40 +699,36 @@ if has_name:
                 "revision_needed": t("status_map_revision"),
                 "rejected": t("status_map_rejected"),
             }
+            _ad_map = {
+                "approved": "✅",
+                "auto_approved": "🤖",
+                "revision_needed": "📝",
+                "rejected": "❌",
+            }
             for row in _history:
                 sc = row.get("overall_score", 0)
                 score_color = "#22c55e" if sc >= 80 else ("#f59e0b" if sc >= 60 else "#ef4444")
                 st_label = status_map.get(row.get("overall_status", ""), t("status_map_pending"))
                 ts = row["created_at"][:16].replace("T", " ") if row.get("created_at") else ""
+                ad_icon = _ad_map.get(row.get("admin_decision", ""), "")
+                fb_icon = "💬" if row.get("brand_feedback") else ""
+                cap_icon = ""
+                _cap = row.get("caption_check_result")
+                if _cap and isinstance(_cap, dict):
+                    cap_icon = "🔗✅" if _cap.get("all_passed") else "🔗❌"
                 st.markdown(
-                    f'<div style="display:flex;align-items:center;gap:16px;padding:8px 12px;'
+                    f'<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;'
                     f'border-bottom:1px solid #f0f0f0;">'
                     f'<span style="font-weight:700;min-width:70px;">'
                     f'{t("history_round", round=row.get("round", 1))}</span>'
                     f'<span style="color:{score_color};font-weight:800;font-size:18px;min-width:40px;">'
                     f'{sc}</span>'
-                    f'<span style="min-width:100px;">{st_label}</span>'
+                    f'<span style="min-width:80px;">{st_label}</span>'
+                    f'<span style="font-size:14px;">{ad_icon} {fb_icon} {cap_icon}</span>'
                     f'<span style="color:#94a3b8;font-size:12px;">{ts}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
-
-# --- Brand Feedback (PHASE 3) — read from vc_reviews.brand_feedback column ---
-if has_name:
-    _fb_reviews = [r for r in _history if r.get("brand_feedback")]
-    if _fb_reviews:
-        st.markdown(f"### 💬 {t('brand_feedback_title')}")
-        st.caption(t("brand_feedback_desc"))
-        for fb_rev in _fb_reviews:
-            fb_ts = fb_rev["created_at"][:16].replace("T", " ") if fb_rev.get("created_at") else ""
-            st.markdown(
-                f'<div class="result-card result-warn">'
-                f'<strong>{t("brand_feedback_round", round=fb_rev.get("round", 1))}</strong>'
-                f' <span style="color:#94a3b8;font-size:12px;">({fb_ts})</span><br>'
-                f'{fb_rev["brand_feedback"]}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
 
 review_btn = st.button(
     t("start_review"),
@@ -701,11 +845,26 @@ if "creator_report" in st.session_state:
     # Summary
     st.markdown(f"**{t('summary')}:** {report.summary}")
 
-    # --- Issues ---
-    problem_scenes = [sr for sr in report.scene_reviews if sr.status in ("fail", "warning")]
+    # --- Issues (sorted by severity: fail first, then warning) ---
+    problem_scenes = sorted(
+        [sr for sr in report.scene_reviews if sr.status in ("fail", "warning")],
+        key=lambda s: (0 if s.status == "fail" else 1),
+    )
     violated_rules = [r for r in report.rule_reviews if r.status == "violated"]
 
     if problem_scenes or violated_rules:
+        # Priority summary card
+        n_fail = sum(1 for s in problem_scenes if s.status == "fail") + len(violated_rules)
+        n_warn = sum(1 for s in problem_scenes if s.status == "warning")
+        if n_fail > 0:
+            st.markdown(
+                f'<div class="result-card result-fail" style="text-align:center;">'
+                f'{t("priority_high")} <b>{n_fail}</b>건'
+                + (f'&nbsp;&nbsp;{t("priority_medium")} <b>{n_warn}</b>건' if n_warn else '')
+                + f'</div>',
+                unsafe_allow_html=True,
+            )
+
         st.markdown(f"### {t('issues_title')}")
 
         for sr in problem_scenes:
@@ -915,8 +1074,28 @@ if "creator_report" in st.session_state:
         for i, item in enumerate(report.revision_items, 1):
             st.checkbox(item, key=f"creator_checklist_{i}")
 
-    # --- Next Steps (for approved videos) ---
-    if report.overall_status == "approved":
+    # --- Brand Feedback (shown after results, not before upload) ---
+    if has_name and _fb_reviews:
+        st.divider()
+        st.markdown(f"### 💬 {t('brand_feedback_title')}")
+        st.caption(t("brand_feedback_desc"))
+        for fb_rev in _fb_reviews:
+            fb_ts = fb_rev["created_at"][:16].replace("T", " ") if fb_rev.get("created_at") else ""
+            st.markdown(
+                f'<div class="result-card result-warn">'
+                f'<strong>{t("brand_feedback_round", round=fb_rev.get("round", 1))}</strong>'
+                f' <span style="color:#94a3b8;font-size:12px;">({fb_ts})</span><br>'
+                f'{fb_rev["brand_feedback"]}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    # --- Next Steps (for approved videos — AI or admin approved) ---
+    _is_approved = (
+        report.overall_status == "approved"
+        or (has_name and _history and _history[0].get("admin_decision") in ("approved", "auto_approved"))
+    )
+    if _is_approved:
         st.divider()
         st.markdown(f"### 🚀 {t('next_steps_title')}")
         st.markdown(
@@ -988,6 +1167,9 @@ if "creator_report" in st.session_state:
                     try:
                         cap_result = check_upload(post_content, guideline)
                         st.session_state["creator_caption_result"] = cap_result
+                        # Save to DB
+                        if has_name and _history:
+                            db.save_caption_check(_history[0]["id"], cap_result)
                     except Exception as e:
                         st.error(t("caption_check_error", e=e))
 

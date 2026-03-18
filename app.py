@@ -581,13 +581,43 @@ with tab1:
 
             # --- Creator Submission Status ---
             st.divider()
+            # --- Campaign Overview (all campaigns summary) ---
+            all_campaigns_summary = db.get_campaigns_summary()
+            if all_campaigns_summary and len(all_campaigns_summary) > 1:
+                st.subheader("🗂️ 전체 캠페인 현황")
+                overview_cols = st.columns(min(len(all_campaigns_summary), 4))
+                for i, cs in enumerate(all_campaigns_summary):
+                    col = overview_cols[i % len(overview_cols)]
+                    total = cs["total_creators"]
+                    pct = round(cs["approved"] / total * 100) if total else 0
+                    col.markdown(
+                        f'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;'
+                        f'padding:16px;margin-bottom:8px;">'
+                        f'<div style="font-weight:700;font-size:14px;margin-bottom:8px;">{cs["campaign_name"]}</div>'
+                        f'<div style="font-size:12px;color:#64748b;">'
+                        f'크리에이터 <b>{total}</b>명 · 평균 <b>{cs["avg_score"]}</b>점<br>'
+                        f'✅{cs["approved"]} 📝{cs["revision_needed"]} ❌{cs["rejected"]}'
+                        f' · 캡션완료 {cs["caption_done"]}/{total}<br>'
+                        f'<div style="background:#e2e8f0;border-radius:4px;height:6px;margin-top:6px;">'
+                        f'<div style="background:#22c55e;border-radius:4px;height:6px;width:{pct}%;"></div>'
+                        f'</div>'
+                        f'</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                st.divider()
+
             st.subheader("📊 크리에이터 제출 현황")
             campaign_id_for_status = g.title or g.product_name or link_campaign
             submissions = db.get_submission_status(campaign_id_for_status)
             if submissions:
                 status_icons = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}
                 score_icons = lambda s: "🟢" if s >= 80 else ("🟡" if s >= 60 else "🔴")
-                decision_labels = {"approved": "✅수동승인", "rejected": "❌수동반려", "revision_needed": "📝수동수정요청"}
+                decision_labels = {
+                    "approved": "✅수동승인",
+                    "auto_approved": "🤖자동승인",
+                    "rejected": "❌수동반려",
+                    "revision_needed": "📝수동수정요청",
+                }
 
                 for idx, sub in enumerate(submissions):
                     sc = sub.get("overall_score", 0)
@@ -597,9 +627,14 @@ with tab1:
                     # Badges from vc_reviews columns
                     extra_badges = ""
                     if sub.get("admin_decision"):
-                        extra_badges += f" | {decision_labels.get(sub['admin_decision'], '')}"
+                        extra_badges += f" | {decision_labels.get(sub['admin_decision'], sub['admin_decision'])}"
                     if sub.get("brand_feedback"):
                         extra_badges += " | 💬피드백"
+                    # Caption check status
+                    cap = sub.get("caption_check_result")
+                    if cap:
+                        cap_ok = cap.get("all_passed", False) if isinstance(cap, dict) else False
+                        extra_badges += " | 🔗캡션✅" if cap_ok else " | 🔗캡션❌"
 
                     col_info, col_btn = st.columns([5, 1])
                     with col_info:
@@ -623,7 +658,7 @@ with tab1:
                         r_ts = rev["created_at"][:16].replace("T", " ") if rev.get("created_at") else ""
 
                         md = rev.get("admin_decision")
-                        md_badge = f" — {decision_labels.get(md, '')}" if md else ""
+                        md_badge = f" — {decision_labels.get(md, md)}" if md else ""
 
                         with st.expander(
                             f"Round {rev.get('round', 1)} — {r_sc}점 {r_status}{md_badge} ({r_ts})",
@@ -648,12 +683,36 @@ with tab1:
                                 st.markdown("**수동 검토 필요:**")
                                 for flag in report.manual_review_flags:
                                     st.markdown(f"- ⚠️ {flag}")
+
+                            # --- Admin decision buttons on every review ---
+                            rev_id = rev["id"]
+                            if not md or md == "auto_approved":
+                                st.markdown("**어드민 수동 결정:**")
+                                d_memo = st.text_input(
+                                    "메모 (선택)",
+                                    placeholder="판단 근거 입력",
+                                    key=f"dmemo_{rev_id}",
+                                )
+                                dc1, dc2, dc3 = st.columns(3)
+                                with dc1:
+                                    if st.button("✅ 승인", key=f"dappr_{rev_id}", use_container_width=True):
+                                        db.save_admin_decision(rev_id, "approved", d_memo)
+                                        st.rerun()
+                                with dc2:
+                                    if st.button("📝 수정요청", key=f"drev_{rev_id}", use_container_width=True):
+                                        db.save_admin_decision(rev_id, "revision_needed", d_memo)
+                                        st.rerun()
+                                with dc3:
+                                    if st.button("❌ 반려", key=f"drej_{rev_id}", use_container_width=True):
+                                        db.save_admin_decision(rev_id, "rejected", d_memo)
+                                        st.rerun()
+
                             if report.email_draft:
                                 st.text_area(
                                     "이메일 초안",
                                     report.email_draft,
                                     height=120,
-                                    key=f"email_draft_{rev['id']}",
+                                    key=f"email_draft_{rev_id}",
                                 )
 
                     if st.button("✕ 닫기", key="close_detail"):
@@ -1012,7 +1071,7 @@ with tab2:
                         unsafe_allow_html=True,
                     )
 
-                # --- Admin Manual Decision ---
+                # --- Admin Manual Decision (works with session review or from dashboard) ---
                 _rid = st.session_state.get("last_review_id")
                 if _rid:
                     st.markdown("**어드민 수동 결정:**")
@@ -1037,6 +1096,8 @@ with tab2:
                             db.save_admin_decision(_rid, "rejected", manual_memo)
                             st.error("❌ 반려 처리되었습니다.")
                             st.rerun()
+                else:
+                    st.caption("💡 가이드라인 탭의 '제출 현황 → 상세'에서도 수동 결정이 가능합니다.")
 
             # --- Revision Comparison (re-review) ---
             if report.revision_comparison:
@@ -1398,14 +1459,22 @@ with tab4:
             if history:
                 st.divider()
                 st.markdown("### 📋 검수 이력")
+                _decision_map = {
+                    "approved": "✅수동승인",
+                    "auto_approved": "🤖자동승인",
+                    "rejected": "❌수동반려",
+                    "revision_needed": "📝수동수정요청",
+                }
                 for h in history[:10]:
                     score = h.get("overall_score", 0)
                     score_color = "🟢" if score >= 80 else ("🟡" if score >= 60 else "🔴")
                     status_icon = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}.get(h.get("overall_status", ""), "❓")
                     ts = h["created_at"][:16].replace("T", " ") if h.get("created_at") else ""
+                    ad = h.get("admin_decision")
+                    ad_badge = f" | {_decision_map.get(ad, '')}" if ad else ""
                     st.markdown(
                         f"- {score_color} **{h['creator_name']}** — Round {h['round']} | "
-                        f"점수: {score} {status_icon} | {ts}"
+                        f"점수: {score} {status_icon}{ad_badge} | {ts}"
                     )
         # --- Brand Feedback Input (PHASE 3) ---
         st.divider()
@@ -1514,6 +1583,10 @@ with tab5:
                 try:
                     result = check_upload(post_content, guideline)
                     st.session_state["upload_check_result"] = result
+                    # Save to DB if we have a review ID
+                    _cap_rid = st.session_state.get("last_review_id")
+                    if _cap_rid:
+                        db.save_caption_check(_cap_rid, result)
                 except Exception as e:
                     st.error(f"확인 오류: {e}")
 
