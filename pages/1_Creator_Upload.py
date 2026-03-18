@@ -281,7 +281,7 @@ if review_btn and has_video and has_name and api_ok:
 
         # --- Process video ---
         progress.progress(25, text="영상 분석 중 (프레임 추출 + 음성 인식)...")
-        processed_video = process_video(str(filename), video_bytes)
+        processed_video = process_video(video_bytes, str(filename))
 
         # --- Run compliance check ---
         guideline_images = []  # Creator page doesn't have guideline images in session
