@@ -358,12 +358,30 @@ with st.sidebar:
                 st.session_state.pop("url_fetched_files", None)
 
     st.subheader("2. 크리에이터 영상")
-    video_files = st.file_uploader(
-        "영상 파일 업로드 (여러 개 가능)",
-        type=["mp4", "mov", "avi", "mkv"],
-        accept_multiple_files=True,
-        key="video_upload",
+    video_input_mode = st.radio(
+        "영상 입력 방식",
+        ["파일 업로드", "Google Drive 링크"],
+        horizontal=True,
+        key="video_input_mode",
     )
+
+    video_files = None
+    gdrive_video_url = ""
+
+    if video_input_mode == "파일 업로드":
+        video_files = st.file_uploader(
+            "영상 파일 업로드 (여러 개 가능)",
+            type=["mp4", "mov", "avi", "mkv"],
+            accept_multiple_files=True,
+            key="video_upload",
+        )
+    else:
+        gdrive_video_url = st.text_input(
+            "Google Drive 영상 링크",
+            placeholder="https://drive.google.com/file/d/.../view",
+            key="gdrive_video_url",
+        )
+        st.caption("파일이 '링크가 있는 모든 사람'으로 공유되어 있어야 합니다.")
 
     st.subheader("3. 크리에이터 정보")
     creator_name = st.text_input(
@@ -415,11 +433,12 @@ with st.sidebar:
         use_container_width=True,
     )
 
+    has_video_input = bool(video_files) or bool(gdrive_video_url.strip())
     review_btn = st.button(
         "🔍 검수 시작",
         disabled=not (
             "parsed_guideline" in st.session_state
-            and video_files
+            and has_video_input
             and api_ok
         ),
         use_container_width=True,
@@ -555,13 +574,12 @@ with tab1:
         st.info("👈 사이드바에서 가이드라인 파일을 업로드하고 '가이드라인 파싱' 버튼을 눌러주세요.")
 
 # ===== Video Review (multi-video batch) =====
-if review_btn and video_files and "parsed_guideline" in st.session_state:
+if review_btn and has_video_input and "parsed_guideline" in st.session_state:
     from processors.video_processor import process_video, process_videos_parallel
     from analyzer.compliance_checker import run_compliance_check
 
     guideline = st.session_state["parsed_guideline"]
     guideline_images = st.session_state.get("guideline_images", [])
-    num_videos = len(video_files)
     c_name = st.session_state.get("creator_name", "").strip()
     campaign_id = guideline.title or guideline.product_name or "default"
 
@@ -574,15 +592,40 @@ if review_btn and video_files and "parsed_guideline" in st.session_state:
             previous_report, prev_round = prev
             current_round = prev_round + 1
 
-    progress_bar = st.progress(0, text=f"영상 {num_videos}개 처리 준비 중...")
+    progress_bar = st.progress(0, text="처리 준비 중...")
 
     try:
+        # --- Download from Google Drive if needed ---
+        video_items = []
+        if gdrive_video_url.strip() and not video_files:
+            from utils.gdrive_video import download_gdrive_video, is_gdrive_url
+
+            if not is_gdrive_url(gdrive_video_url.strip()):
+                st.error("올바른 Google Drive 링크가 아닙니다.")
+                st.stop()
+
+            progress_bar.progress(3, text="Google Drive에서 영상 다운로드 중...")
+
+            def dl_progress(dl_mb, total_mb):
+                if total_mb:
+                    pct = min(int((dl_mb / total_mb) * 15) + 3, 18)
+                    progress_bar.progress(pct, text=f"다운로드 중... {dl_mb:.0f}/{total_mb:.0f} MB")
+                else:
+                    progress_bar.progress(10, text=f"다운로드 중... {dl_mb:.0f} MB")
+
+            filename, tmp_path = download_gdrive_video(gdrive_video_url.strip(), dl_progress)
+            video_bytes = tmp_path.read_bytes()
+            tmp_path.unlink(missing_ok=True)
+            video_items.append((filename, video_bytes))
+            st.success(f"다운로드 완료: {filename} ({len(video_bytes) // (1024*1024)}MB)")
+        else:
+            for vf in video_files:
+                video_items.append((vf.name, vf.read()))
+
+        num_videos = len(video_items)
+
         # --- Phase 1: Parallel preprocessing (ffmpeg + Whisper) ---
         progress_bar.progress(5, text=f"영상 {num_videos}개 병렬 전처리 중 (프레임 추출 + STT)...")
-
-        video_items = []
-        for vf in video_files:
-            video_items.append((vf.name, vf.read()))
 
         def preprocess_progress(done, total, fname):
             pct = 5 + int((done / total) * 25)
