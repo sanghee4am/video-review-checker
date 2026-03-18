@@ -160,7 +160,7 @@ def list_reviews(campaign_name: str) -> list[dict]:
     sb = _get_client()
     result = (
         sb.table("vc_reviews")
-        .select("id, creator_name, round, overall_score, overall_status, created_at")
+        .select("id, creator_name, round, overall_score, overall_status, created_at, admin_decision, admin_memo, brand_feedback")
         .eq("campaign_name", campaign_name)
         .order("created_at", desc=True)
         .execute()
@@ -176,7 +176,7 @@ def get_submission_status(campaign_name: str) -> list[dict]:
     sb = _get_client()
     result = (
         sb.table("vc_reviews")
-        .select("creator_name, round, overall_score, overall_status, created_at")
+        .select("id, creator_name, round, overall_score, overall_status, created_at, admin_decision, brand_feedback")
         .eq("campaign_name", campaign_name)
         .order("created_at", desc=True)
         .execute()
@@ -189,6 +189,23 @@ def get_submission_status(campaign_name: str) -> list[dict]:
             seen.add(row["creator_name"])
             unique.append(row)
     return unique
+
+
+def get_creator_reviews(campaign_name: str, creator_name: str) -> list[dict]:
+    """Get all reviews for a specific creator in a campaign, newest first.
+
+    Returns list of {id, round, overall_score, overall_status, created_at, report_json}.
+    """
+    sb = _get_client()
+    result = (
+        sb.table("vc_reviews")
+        .select("id, round, overall_score, overall_status, created_at, report_json, admin_decision, admin_memo, brand_feedback")
+        .eq("campaign_name", campaign_name)
+        .eq("creator_name", creator_name)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return result.data
 
 
 def load_review(review_id: int) -> Optional[ReviewReport]:
@@ -204,3 +221,30 @@ def load_review(review_id: int) -> Optional[ReviewReport]:
     if not result.data:
         return None
     return ReviewReport.model_validate(result.data["report_json"])
+
+
+# ── Admin Decision & Brand Feedback (vc_reviews 컬럼) ──
+
+
+def save_admin_decision(review_id: int, decision: str, memo: str = "") -> None:
+    """Save admin manual decision on a review (updates vc_reviews row).
+
+    decision: 'approved', 'rejected', or 'revision_needed'
+    Columns: admin_decision, admin_memo
+    """
+    sb = _get_client()
+    sb.table("vc_reviews").update({
+        "admin_decision": decision,
+        "admin_memo": memo,
+    }).eq("id", review_id).execute()
+
+
+def save_brand_feedback(review_id: int, feedback: str) -> None:
+    """Save brand feedback on a review (updates vc_reviews row).
+
+    Column: brand_feedback
+    """
+    sb = _get_client()
+    sb.table("vc_reviews").update({
+        "brand_feedback": feedback,
+    }).eq("id", review_id).execute()

@@ -356,7 +356,7 @@ with st.sidebar:
     if creator_name and "parsed_guideline" in st.session_state:
         g = st.session_state["parsed_guideline"]
         campaign_id = g.title or g.product_name or "default"
-        prev = get_previous_review(campaign_id, creator_name)
+        prev = db.get_previous_review(campaign_id, creator_name)
         if prev:
             prev_report, prev_round = prev
             st.info(
@@ -587,14 +587,79 @@ with tab1:
             if submissions:
                 status_icons = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}
                 score_icons = lambda s: "🟢" if s >= 80 else ("🟡" if s >= 60 else "🔴")
-                for sub in submissions:
+                decision_labels = {"approved": "✅수동승인", "rejected": "❌수동반려", "revision_needed": "📝수동수정요청"}
+
+                for idx, sub in enumerate(submissions):
                     sc = sub.get("overall_score", 0)
                     st_icon = status_icons.get(sub.get("overall_status", ""), "❓")
                     ts = sub["created_at"][:16].replace("T", " ") if sub.get("created_at") else ""
-                    st.markdown(
-                        f"- {score_icons(sc)} **{sub['creator_name']}** — "
-                        f"Round {sub['round']} | 점수: {sc} {st_icon} | {ts}"
-                    )
+
+                    # Badges from vc_reviews columns
+                    extra_badges = ""
+                    if sub.get("admin_decision"):
+                        extra_badges += f" | {decision_labels.get(sub['admin_decision'], '')}"
+                    if sub.get("brand_feedback"):
+                        extra_badges += " | 💬피드백"
+
+                    col_info, col_btn = st.columns([5, 1])
+                    with col_info:
+                        st.markdown(
+                            f"{score_icons(sc)} **{sub['creator_name']}** — "
+                            f"Round {sub['round']} | 점수: {sc} {st_icon} | {ts}"
+                            f"{extra_badges}"
+                        )
+                    with col_btn:
+                        if st.button("상세", key=f"detail_{idx}"):
+                            st.session_state["view_creator_detail"] = sub["creator_name"]
+
+                # Show detailed review history for selected creator
+                if "view_creator_detail" in st.session_state:
+                    detail_creator = st.session_state["view_creator_detail"]
+                    st.markdown(f"---\n#### 📝 {detail_creator} 검수 이력")
+                    reviews = db.get_creator_reviews(campaign_id_for_status, detail_creator)
+                    for rev in reviews:
+                        r_sc = rev.get("overall_score", 0)
+                        r_status = status_icons.get(rev.get("overall_status", ""), "❓")
+                        r_ts = rev["created_at"][:16].replace("T", " ") if rev.get("created_at") else ""
+
+                        md = rev.get("admin_decision")
+                        md_badge = f" — {decision_labels.get(md, '')}" if md else ""
+
+                        with st.expander(
+                            f"Round {rev.get('round', 1)} — {r_sc}점 {r_status}{md_badge} ({r_ts})",
+                            expanded=(rev == reviews[0]),
+                        ):
+                            report = ReviewReport.model_validate(rev["report_json"])
+                            st.markdown(f"**요약:** {report.summary}")
+
+                            if md:
+                                st.info(
+                                    f"**수동 결정:** {decision_labels.get(md, md)}"
+                                    + (f"\n메모: {rev['admin_memo']}" if rev.get("admin_memo") else "")
+                                )
+                            if rev.get("brand_feedback"):
+                                st.warning(f"**브랜드 피드백:** {rev['brand_feedback']}")
+
+                            if report.revision_items:
+                                st.markdown("**수정 필요 항목:**")
+                                for item in report.revision_items:
+                                    st.markdown(f"- {item}")
+                            if report.manual_review_flags:
+                                st.markdown("**수동 검토 필요:**")
+                                for flag in report.manual_review_flags:
+                                    st.markdown(f"- ⚠️ {flag}")
+                            if report.email_draft:
+                                st.text_area(
+                                    "이메일 초안",
+                                    report.email_draft,
+                                    height=120,
+                                    key=f"email_draft_{rev['id']}",
+                                )
+
+                    if st.button("✕ 닫기", key="close_detail"):
+                        del st.session_state["view_creator_detail"]
+                        st.rerun()
+
             else:
                 st.caption("아직 제출한 크리에이터가 없습니다.")
 
@@ -706,7 +771,10 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
         # Save review history
         if c_name:
             for fname, data in all_results.items():
-                db.save_review(campaign_id, c_name, data["report"], current_round)
+                rid = db.save_review(campaign_id, c_name, data["report"], current_round)
+                st.session_state["last_review_id"] = rid
+                st.session_state["last_review_campaign"] = campaign_id
+                st.session_state["last_review_creator"] = c_name
 
         progress_bar.progress(100, text=f"검수 완료! ({num_videos}개 영상)")
         round_msg = f" (Round {current_round})" if current_round > 1 else ""
@@ -943,6 +1011,32 @@ with tab2:
                         f'<div class="manual-flag">🔍 {flag}{flag_frames}</div>',
                         unsafe_allow_html=True,
                     )
+
+                # --- Admin Manual Decision ---
+                _rid = st.session_state.get("last_review_id")
+                if _rid:
+                    st.markdown("**어드민 수동 결정:**")
+                    manual_memo = st.text_input(
+                        "메모 (선택)",
+                        placeholder="수동 확인 후 판단 근거를 입력하세요",
+                        key="manual_decision_memo",
+                    )
+                    col_approve, col_revision, col_reject = st.columns(3)
+                    with col_approve:
+                        if st.button("✅ 승인", key="manual_approve", use_container_width=True):
+                            db.save_admin_decision(_rid, "approved", manual_memo)
+                            st.success("✅ 승인 처리되었습니다.")
+                            st.rerun()
+                    with col_revision:
+                        if st.button("📝 수정 필요", key="manual_revision", use_container_width=True):
+                            db.save_admin_decision(_rid, "revision_needed", manual_memo)
+                            st.warning("📝 수정 필요로 처리되었습니다.")
+                            st.rerun()
+                    with col_reject:
+                        if st.button("❌ 반려", key="manual_reject", use_container_width=True, type="primary"):
+                            db.save_admin_decision(_rid, "rejected", manual_memo)
+                            st.error("❌ 반려 처리되었습니다.")
+                            st.rerun()
 
             # --- Revision Comparison (re-review) ---
             if report.revision_comparison:
@@ -1313,6 +1407,48 @@ with tab4:
                         f"- {score_color} **{h['creator_name']}** — Round {h['round']} | "
                         f"점수: {score} {status_icon} | {ts}"
                     )
+        # --- Brand Feedback Input (PHASE 3) ---
+        st.divider()
+        st.markdown("### 💬 브랜드 피드백 전달")
+        st.caption("고객사(브랜드)의 피드백을 크리에이터의 최신 리뷰에 저장합니다. 크리에이터가 자신의 페이지에서 확인할 수 있습니다.")
+
+        if "parsed_guideline" in st.session_state:
+            g = st.session_state["parsed_guideline"]
+            bf_campaign = g.title or g.product_name or "default"
+
+            bf_submissions = db.get_submission_status(bf_campaign)
+            bf_creators = [s["creator_name"] for s in bf_submissions] if bf_submissions else []
+
+            if bf_creators:
+                bf_creator = st.selectbox(
+                    "크리에이터 선택",
+                    bf_creators,
+                    key="bf_creator_select",
+                )
+                # Find this creator's latest review ID
+                bf_sub = next((s for s in bf_submissions if s["creator_name"] == bf_creator), None)
+                bf_review_id = bf_sub["id"] if bf_sub else None
+
+                # Show existing feedback on this review
+                if bf_sub and bf_sub.get("brand_feedback"):
+                    st.info(f"**기존 피드백:** {bf_sub['brand_feedback']}")
+
+                bf_text = st.text_area(
+                    "브랜드 피드백 내용",
+                    placeholder="예: 제품 클로즈업 장면에서 로고가 더 잘 보이도록 수정 요청\n예: 후반 CTA 멘트를 '지금 바로 확인하세요'로 변경",
+                    height=150,
+                    key="bf_feedback_text",
+                )
+                if st.button("📤 피드백 전달", key="bf_submit", use_container_width=True):
+                    if bf_text.strip() and bf_review_id:
+                        db.save_brand_feedback(bf_review_id, bf_text.strip())
+                        st.success(f"✅ {bf_creator}에게 피드백이 전달되었습니다.")
+                        st.rerun()
+                    elif not bf_text.strip():
+                        st.warning("피드백 내용을 입력해주세요.")
+            else:
+                st.info("제출한 크리에이터가 없어 피드백을 전달할 대상이 없습니다.")
+
     else:
         st.info("검수가 완료되면 브랜드사 전달용 코멘트가 생성됩니다.")
 

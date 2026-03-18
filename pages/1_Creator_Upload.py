@@ -94,6 +94,48 @@ TEXTS = {
         "cat_sfx": "사운드/효과음",
         "cat_general": "일반 편집",
         "scene_all": "전체",
+        "history_title": "내 검수 이력",
+        "history_empty": "이전 검수 이력이 없습니다.",
+        "history_round": "Round {round}",
+        "history_score": "점수",
+        "history_status": "상태",
+        "history_date": "검수일시",
+        "history_detail": "상세 보기",
+        "status_map_approved": "✅ 승인",
+        "status_map_revision": "📝 수정 필요",
+        "status_map_rejected": "❌ 반려",
+        "status_map_pending": "⏳ 대기",
+        "next_steps_title": "다음 단계",
+        "next_step_1": "승인된 영상을 SNS 플랫폼에 업로드해주세요.",
+        "next_step_2": "업로드 후 게시물 링크를 아래에 붙여넣어주세요.",
+        "next_step_3": "해시태그와 캡션이 가이드라인에 맞는지 자동으로 확인합니다.",
+        "post_link_placeholder": "https://www.instagram.com/p/... 또는 https://www.tiktok.com/@.../video/...",
+        "submit_link": "링크 제출",
+        "link_submitted": "링크가 제출되었습니다! 담당자가 확인 후 연락드리겠습니다.",
+        "link_empty": "게시물 링크를 입력해주세요.",
+        "caption_check_title": "캡션 검수",
+        "caption_check_desc": "게시물의 해시태그, 멘션, 광고 표시 등이 가이드라인에 맞는지 확인합니다.",
+        "caption_input_url": "게시물 URL",
+        "caption_input_paste": "캡션 직접 붙여넣기",
+        "caption_input_mode": "입력 방식",
+        "caption_url_placeholder": "YouTube, Instagram, TikTok 게시물 링크",
+        "caption_url_help": "지원: YouTube, Instagram, TikTok (공개 게시물)",
+        "caption_paste_placeholder": "게시물의 캡션/설명을 여기에 붙여넣으세요.\n\n예:\n오늘도 피부 관리! #광고 #skincare @brandname ...",
+        "caption_check_btn": "🔍 캡션 검수 시작",
+        "caption_fetching": "게시물 캡션 가져오는 중...",
+        "caption_fetched": "{platform}에서 캡션을 가져왔습니다.",
+        "caption_fetched_content": "가져온 캡션 내용",
+        "caption_checking": "캡션 필수 요소 확인 중...",
+        "caption_all_pass": "모든 필수 요소가 확인되었습니다!",
+        "caption_missing": "누락된 항목이 있습니다. 수정 후 다시 확인해주세요.",
+        "caption_check_error": "확인 오류: {e}",
+        "caption_summary": "요약",
+        "caption_no_input": "게시물 URL 또는 캡션을 입력해주세요.",
+        "brand_feedback_title": "브랜드 피드백",
+        "brand_feedback_desc": "고객사(브랜드)로부터 전달된 피드백입니다. 아래 내용을 반영하여 수정해주세요.",
+        "brand_feedback_round": "라운드 {round}",
+        "brand_feedback_date": "전달일시",
+        "brand_feedback_empty": "전달된 브랜드 피드백이 없습니다.",
     },
     "en": {
         "hero_title": "Video Review Upload",
@@ -161,6 +203,48 @@ TEXTS = {
         "cat_sfx": "Sound/SFX",
         "cat_general": "General",
         "scene_all": "Overall",
+        "history_title": "My Review History",
+        "history_empty": "No previous reviews found.",
+        "history_round": "Round {round}",
+        "history_score": "Score",
+        "history_status": "Status",
+        "history_date": "Date",
+        "history_detail": "View Details",
+        "status_map_approved": "✅ Approved",
+        "status_map_revision": "📝 Revision Needed",
+        "status_map_rejected": "❌ Rejected",
+        "status_map_pending": "⏳ Pending",
+        "next_steps_title": "Next Steps",
+        "next_step_1": "Upload the approved video to your SNS platform.",
+        "next_step_2": "Paste the post link below after uploading.",
+        "next_step_3": "We'll automatically check your hashtags and caption against the guidelines.",
+        "post_link_placeholder": "https://www.instagram.com/p/... or https://www.tiktok.com/@.../video/...",
+        "submit_link": "Submit Link",
+        "link_submitted": "Link submitted! Your manager will review and follow up.",
+        "link_empty": "Please enter your post link.",
+        "caption_check_title": "Caption Check",
+        "caption_check_desc": "Verify that your post's hashtags, mentions, and ad disclosure meet the guidelines.",
+        "caption_input_url": "Post URL",
+        "caption_input_paste": "Paste Caption",
+        "caption_input_mode": "Input method",
+        "caption_url_placeholder": "YouTube, Instagram, or TikTok post link",
+        "caption_url_help": "Supported: YouTube, Instagram, TikTok (public posts)",
+        "caption_paste_placeholder": "Paste the caption/description of your post here.\n\ne.g.:\nSkincare routine! #ad #skincare @brandname ...",
+        "caption_check_btn": "🔍 Check Caption",
+        "caption_fetching": "Fetching post caption...",
+        "caption_fetched": "Caption fetched from {platform}.",
+        "caption_fetched_content": "Fetched caption",
+        "caption_checking": "Checking required caption elements...",
+        "caption_all_pass": "All required elements verified!",
+        "caption_missing": "Some items are missing. Please fix and check again.",
+        "caption_check_error": "Check error: {e}",
+        "caption_summary": "Summary",
+        "caption_no_input": "Please enter a post URL or paste the caption.",
+        "brand_feedback_title": "Brand Feedback",
+        "brand_feedback_desc": "Feedback from the brand/client. Please incorporate these changes in your revision.",
+        "brand_feedback_round": "Round {round}",
+        "brand_feedback_date": "Date",
+        "brand_feedback_empty": "No brand feedback received.",
     },
 }
 
@@ -454,6 +538,53 @@ if not has_name:
     st.info(t("enter_name"))
 elif not has_video:
     st.info(t("upload_video"))
+
+# --- Review History ---
+_history = []
+if has_name:
+    _campaign_id = guideline.title or guideline.product_name or "default"
+    _history = db.get_creator_reviews(_campaign_id, creator_name.strip())
+    if _history:
+        with st.expander(f"📋 {t('history_title')} ({len(_history)})", expanded=False):
+            status_map = {
+                "approved": t("status_map_approved"),
+                "revision_needed": t("status_map_revision"),
+                "rejected": t("status_map_rejected"),
+            }
+            for row in _history:
+                sc = row.get("overall_score", 0)
+                score_color = "#22c55e" if sc >= 80 else ("#f59e0b" if sc >= 60 else "#ef4444")
+                st_label = status_map.get(row.get("overall_status", ""), t("status_map_pending"))
+                ts = row["created_at"][:16].replace("T", " ") if row.get("created_at") else ""
+                st.markdown(
+                    f'<div style="display:flex;align-items:center;gap:16px;padding:8px 12px;'
+                    f'border-bottom:1px solid #f0f0f0;">'
+                    f'<span style="font-weight:700;min-width:70px;">'
+                    f'{t("history_round", round=row.get("round", 1))}</span>'
+                    f'<span style="color:{score_color};font-weight:800;font-size:18px;min-width:40px;">'
+                    f'{sc}</span>'
+                    f'<span style="min-width:100px;">{st_label}</span>'
+                    f'<span style="color:#94a3b8;font-size:12px;">{ts}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+# --- Brand Feedback (PHASE 3) — read from vc_reviews.brand_feedback column ---
+if has_name:
+    _fb_reviews = [r for r in _history if r.get("brand_feedback")]
+    if _fb_reviews:
+        st.markdown(f"### 💬 {t('brand_feedback_title')}")
+        st.caption(t("brand_feedback_desc"))
+        for fb_rev in _fb_reviews:
+            fb_ts = fb_rev["created_at"][:16].replace("T", " ") if fb_rev.get("created_at") else ""
+            st.markdown(
+                f'<div class="result-card result-warn">'
+                f'<strong>{t("brand_feedback_round", round=fb_rev.get("round", 1))}</strong>'
+                f' <span style="color:#94a3b8;font-size:12px;">({fb_ts})</span><br>'
+                f'{fb_rev["brand_feedback"]}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
 review_btn = st.button(
     t("start_review"),
@@ -783,6 +914,111 @@ if "creator_report" in st.session_state:
         st.markdown(f"### {t('checklist_title')}")
         for i, item in enumerate(report.revision_items, 1):
             st.checkbox(item, key=f"creator_checklist_{i}")
+
+    # --- Next Steps (for approved videos) ---
+    if report.overall_status == "approved":
+        st.divider()
+        st.markdown(f"### 🚀 {t('next_steps_title')}")
+        st.markdown(
+            f'<div class="result-card result-pass">'
+            f'<strong>1.</strong> {t("next_step_1")}<br>'
+            f'<strong>2.</strong> {t("next_step_2")}<br>'
+            f'<strong>3.</strong> {t("next_step_3")}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # --- Caption Self-Check ---
+        st.markdown(f"### 🔍 {t('caption_check_title')}")
+        st.caption(t("caption_check_desc"))
+
+        caption_mode = st.radio(
+            t("caption_input_mode"),
+            [t("caption_input_url"), t("caption_input_paste")],
+            horizontal=True,
+            key="creator_caption_mode",
+        )
+
+        caption_url = ""
+        caption_text = ""
+
+        if caption_mode == t("caption_input_url"):
+            caption_url = st.text_input(
+                t("caption_input_url"),
+                placeholder=t("caption_url_placeholder"),
+                key="creator_caption_url",
+            )
+            st.caption(t("caption_url_help"))
+        else:
+            caption_text = st.text_area(
+                t("caption_input_paste"),
+                placeholder=t("caption_paste_placeholder"),
+                height=200,
+                key="creator_caption_text",
+            )
+
+        has_caption_input = bool(caption_url.strip()) or bool(caption_text.strip())
+        caption_btn = st.button(
+            t("caption_check_btn"),
+            disabled=not has_caption_input,
+            use_container_width=True,
+            key="creator_caption_btn",
+        )
+
+        if caption_btn and has_caption_input:
+            from analyzer.upload_checker import check_upload, fetch_post_content
+
+            post_content = caption_text.strip()
+
+            # Fetch content from URL if needed
+            if caption_url.strip() and not post_content:
+                with st.spinner(t("caption_fetching")):
+                    try:
+                        platform, fetched = fetch_post_content(caption_url.strip())
+                        post_content = fetched
+                        st.success(f"✅ {t('caption_fetched', platform=platform)}")
+                        with st.expander(t("caption_fetched_content"), expanded=False):
+                            st.text(post_content[:2000])
+                    except ValueError as e:
+                        st.error(str(e))
+                        post_content = ""
+
+            if post_content:
+                with st.spinner(t("caption_checking")):
+                    try:
+                        cap_result = check_upload(post_content, guideline)
+                        st.session_state["creator_caption_result"] = cap_result
+                    except Exception as e:
+                        st.error(t("caption_check_error", e=e))
+
+        if "creator_caption_result" in st.session_state:
+            cap_result = st.session_state["creator_caption_result"]
+            all_ok = cap_result.get("all_passed", False)
+
+            if all_ok:
+                st.success(f"✅ {t('caption_all_pass')}")
+            else:
+                st.warning(f"⚠️ {t('caption_missing')}")
+
+            checks = cap_result.get("checks", [])
+            if checks:
+                for chk in checks:
+                    status = chk.get("status", "")
+                    element = chk.get("element", "")
+                    detail = chk.get("detail", "")
+                    if status == "found":
+                        st.markdown(f"- ✅ **{element}** — {detail}")
+                    elif status == "missing":
+                        st.markdown(f"- ❌ **{element}** — {detail}")
+                    else:
+                        st.markdown(f"- 🟡 **{element}** — {detail}")
+
+            lang = st.session_state.get("creator_lang", "ko")
+            summary_key = "summary_ko" if lang == "ko" else "summary_en"
+            summary = cap_result.get(summary_key, cap_result.get("summary_ko", ""))
+            if summary:
+                st.markdown("---")
+                st.markdown(f"**{t('caption_summary')}:** {summary}")
 
     st.divider()
     st.caption(t("contact"))
