@@ -1,0 +1,22 @@
+# API keys
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Saved data (local only)
+saved_guidelines/
+
+# IDE
+.vscode/
+.idea/
