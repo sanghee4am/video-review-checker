@@ -1250,30 +1250,64 @@ with tab5:
     st.markdown("### 🔗 업로드 후 확인")
     st.caption("크리에이터가 업로드한 게시물의 캡션에 필수 요소(해시태그, 멘션, 광고 표시 등)가 포함되었는지 확인합니다.")
 
-    post_content = st.text_area(
-        "게시물 캡션 붙여넣기",
-        placeholder="크리에이터가 업로드한 게시물의 캡션/설명을 여기에 붙여넣으세요.\n\n예:\n오늘도 피부 관리! #광고 #skincare @brandname ...",
-        height=200,
-        key="upload_check_content",
+    upload_input_mode = st.radio(
+        "입력 방식",
+        ["URL 링크", "캡션 직접 붙여넣기"],
+        horizontal=True,
+        key="upload_input_mode",
     )
 
+    post_url = ""
+    post_content = ""
+
+    if upload_input_mode == "URL 링크":
+        post_url = st.text_input(
+            "게시물 URL",
+            placeholder="YouTube, Instagram, TikTok 링크 붙여넣기",
+            key="upload_check_url",
+        )
+        st.caption("지원: YouTube, Instagram, TikTok (공개 게시물)")
+    else:
+        post_content = st.text_area(
+            "게시물 캡션 붙여넣기",
+            placeholder="크리에이터가 업로드한 게시물의 캡션/설명을 여기에 붙여넣으세요.\n\n예:\n오늘도 피부 관리! #광고 #skincare @brandname ...",
+            height=200,
+            key="upload_check_content",
+        )
+
+    has_input = bool(post_url.strip()) or bool(post_content.strip())
     check_btn = st.button(
         "🔍 캡션 확인",
-        disabled=not (post_content and "parsed_guideline" in st.session_state),
+        disabled=not (has_input and "parsed_guideline" in st.session_state),
         use_container_width=True,
         key="upload_check_btn",
     )
 
-    if check_btn and post_content and "parsed_guideline" in st.session_state:
-        from analyzer.upload_checker import check_upload
+    if check_btn and has_input and "parsed_guideline" in st.session_state:
+        from analyzer.upload_checker import check_upload, fetch_post_content
 
         guideline = st.session_state["parsed_guideline"]
-        with st.spinner("캡션 필수 요소 확인 중..."):
-            try:
-                result = check_upload(post_content, guideline)
-                st.session_state["upload_check_result"] = result
-            except Exception as e:
-                st.error(f"확인 오류: {e}")
+
+        # Fetch content from URL if needed
+        if post_url.strip() and not post_content.strip():
+            with st.spinner("게시물 캡션 가져오는 중..."):
+                try:
+                    platform, fetched_content = fetch_post_content(post_url.strip())
+                    post_content = fetched_content
+                    st.success(f"✅ {platform}에서 캡션을 가져왔습니다.")
+                    with st.expander("가져온 캡션 내용", expanded=False):
+                        st.text(post_content[:2000])
+                except ValueError as e:
+                    st.error(str(e))
+                    post_content = ""
+
+        if post_content.strip():
+            with st.spinner("캡션 필수 요소 확인 중..."):
+                try:
+                    result = check_upload(post_content, guideline)
+                    st.session_state["upload_check_result"] = result
+                except Exception as e:
+                    st.error(f"확인 오류: {e}")
 
     if "upload_check_result" in st.session_state:
         result = st.session_state["upload_check_result"]
