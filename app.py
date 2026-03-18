@@ -579,6 +579,25 @@ with tab1:
                 else:
                     st.warning("크리에이터 이름을 입력해주세요.")
 
+            # --- Creator Submission Status ---
+            st.divider()
+            st.subheader("📊 크리에이터 제출 현황")
+            campaign_id_for_status = g.title or g.product_name or link_campaign
+            submissions = db.get_submission_status(campaign_id_for_status)
+            if submissions:
+                status_icons = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}
+                score_icons = lambda s: "🟢" if s >= 80 else ("🟡" if s >= 60 else "🔴")
+                for sub in submissions:
+                    sc = sub.get("overall_score", 0)
+                    st_icon = status_icons.get(sub.get("overall_status", ""), "❓")
+                    ts = sub["created_at"][:16].replace("T", " ") if sub.get("created_at") else ""
+                    st.markdown(
+                        f"- {score_icons(sc)} **{sub['creator_name']}** — "
+                        f"Round {sub['round']} | 점수: {sc} {st_icon} | {ts}"
+                    )
+            else:
+                st.caption("아직 제출한 크리에이터가 없습니다.")
+
     else:
         st.info("👈 사이드바에서 가이드라인 파일을 업로드하고 '가이드라인 파싱' 버튼을 눌러주세요.")
 

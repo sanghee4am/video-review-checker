@@ -168,6 +168,29 @@ def list_reviews(campaign_name: str) -> list[dict]:
     return result.data
 
 
+def get_submission_status(campaign_name: str) -> list[dict]:
+    """Get latest submission per creator for a campaign.
+
+    Returns list of {creator_name, round, overall_score, overall_status, created_at}.
+    """
+    sb = _get_client()
+    result = (
+        sb.table("vc_reviews")
+        .select("creator_name, round, overall_score, overall_status, created_at")
+        .eq("campaign_name", campaign_name)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    # Deduplicate: keep only latest per creator
+    seen: set[str] = set()
+    unique = []
+    for row in result.data:
+        if row["creator_name"] not in seen:
+            seen.add(row["creator_name"])
+            unique.append(row)
+    return unique
+
+
 def load_review(review_id: int) -> Optional[ReviewReport]:
     """Load a full review report by ID."""
     sb = _get_client()
