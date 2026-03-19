@@ -9,7 +9,7 @@ import streamlit as st
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import ANTHROPIC_API_KEY, OPENAI_API_KEY
+from config import ANTHROPIC_API_KEY, OPENAI_API_KEY, ADMIN_PASSWORD
 from models.guideline import ParsedGuideline
 from models.review_result import ReviewReport
 import db
@@ -19,6 +19,29 @@ st.set_page_config(
     page_icon="🎬",
     layout="wide",
 )
+
+# --- Hide page navigation in sidebar (creator shouldn't navigate here) ---
+st.markdown("""
+<style>
+    [data-testid="stSidebarNav"] { display: none !important; }
+</style>
+""", unsafe_allow_html=True)
+
+# --- Admin Authentication ---
+if ADMIN_PASSWORD:
+    if "admin_authenticated" not in st.session_state:
+        st.session_state["admin_authenticated"] = False
+    if not st.session_state["admin_authenticated"]:
+        st.markdown("### 🔒 어드민 로그인")
+        st.caption("이 페이지는 어드민 전용입니다.")
+        _pw = st.text_input("비밀번호", type="password", key="admin_pw_input")
+        if st.button("로그인", use_container_width=True):
+            if _pw == ADMIN_PASSWORD:
+                st.session_state["admin_authenticated"] = True
+                st.rerun()
+            else:
+                st.error("비밀번호가 틀렸습니다.")
+        st.stop()
 
 # --- Custom CSS ---
 st.markdown("""
@@ -242,11 +265,21 @@ st.markdown("""
 st.title("🎬 영상 가이드라인 검수 자동화")
 st.caption("크리에이터 영상이 가이드라인에 부합하는지 AI로 1차 검수합니다.")
 
-# --- Sidebar: File Uploads ---
+# --- Sidebar: File Uploads (step-by-step) ---
 with st.sidebar:
-    st.header("📂 입력")
+    # Workflow progress indicator
+    _has_gl = "parsed_guideline" in st.session_state
+    _has_result = "review_report" in st.session_state
+    _step1_icon = "✅" if _has_gl else "👉"
+    _step2_icon = "✅" if _has_result else ("👉" if _has_gl else "⬜")
 
-    st.subheader("1. 가이드라인")
+    st.markdown(
+        f"**{_step1_icon} STEP 1** 가이드라인 준비 → "
+        f"**{_step2_icon} STEP 2** 영상 검수"
+    )
+    st.divider()
+
+    st.subheader(f"{_step1_icon} 1. 가이드라인")
 
     # Saved guidelines loader
     saved_list = db.list_guidelines()
@@ -318,62 +351,70 @@ with st.sidebar:
                 st.error(str(e))
                 st.session_state.pop("url_fetched_files", None)
 
-    st.subheader("2. 크리에이터 영상")
-    video_input_mode = st.radio(
-        "영상 입력 방식",
-        ["파일 업로드", "Google Drive 링크"],
-        horizontal=True,
-        key="video_input_mode",
-    )
+    if not _has_gl:
+        st.info("👆 가이드라인을 먼저 파싱하세요. 이후 영상 검수 단계가 열립니다.")
 
+    # --- Steps 2~4: only visible after guideline is parsed ---
     video_files = None
     gdrive_video_url = ""
+    creator_name = ""
+    review_memo = ""
+    has_video_input = False
 
-    if video_input_mode == "파일 업로드":
-        video_files = st.file_uploader(
-            "영상 파일 업로드 (여러 개 가능)",
-            type=["mp4", "mov", "avi", "mkv"],
-            accept_multiple_files=True,
-            key="video_upload",
+    if _has_gl:
+        st.subheader(f"{_step2_icon} 2. 크리에이터 영상")
+        video_input_mode = st.radio(
+            "영상 입력 방식",
+            ["파일 업로드", "Google Drive 링크"],
+            horizontal=True,
+            key="video_input_mode",
         )
-    else:
-        gdrive_video_url = st.text_input(
-            "Google Drive 영상 링크",
-            placeholder="https://drive.google.com/file/d/.../view",
-            key="gdrive_video_url",
-        )
-        st.caption("파일이 '링크가 있는 모든 사람'으로 공유되어 있어야 합니다.")
 
-    st.subheader("3. 크리에이터 정보")
-    creator_name = st.text_input(
-        "크리에이터 이름/채널명",
-        placeholder="예: @creator_name",
-        key="creator_name",
-    )
-    st.caption("이전 검수 이력과 비교하려면 동일한 이름을 사용하세요.")
-
-    # Show previous review info if available
-    if creator_name and "parsed_guideline" in st.session_state:
-        g = st.session_state["parsed_guideline"]
-        campaign_id = g.title or g.product_name or "default"
-        prev = db.get_previous_review(campaign_id, creator_name)
-        if prev:
-            prev_report, prev_round = prev
-            st.info(
-                f"📋 이전 검수 이력 발견! (Round {prev_round}, "
-                f"점수: {prev_report.overall_score}점, "
-                f"상태: {prev_report.overall_status})\n"
-                f"→ 이번 검수는 **Round {prev_round + 1}**로 진행됩니다."
+        if video_input_mode == "파일 업로드":
+            video_files = st.file_uploader(
+                "영상 파일 업로드 (여러 개 가능)",
+                type=["mp4", "mov", "avi", "mkv"],
+                accept_multiple_files=True,
+                key="video_upload",
             )
+        else:
+            gdrive_video_url = st.text_input(
+                "Google Drive 영상 링크",
+                placeholder="https://drive.google.com/file/d/.../view",
+                key="gdrive_video_url",
+            )
+            st.caption("파일이 '링크가 있는 모든 사람'으로 공유되어 있어야 합니다.")
 
-    st.subheader("4. 메모 (선택)")
-    review_memo = st.text_area(
-        "가이드라인 보충/수정 사항",
-        placeholder="예: CTA 문구는 말하지 않아도 됨\n예: B&A는 선택사항으로 변경됨",
-        height=100,
-        key="review_memo",
-    )
-    st.caption("가이드라인과 달라진 내용이나 추가 참고사항을 입력하세요.")
+        st.subheader("3. 크리에이터 정보")
+        creator_name = st.text_input(
+            "크리에이터 이름/채널명",
+            placeholder="예: @creator_name",
+            key="creator_name",
+        )
+        st.caption("이전 검수 이력과 비교하려면 동일한 이름을 사용하세요.")
+
+        # Show previous review info if available
+        if creator_name:
+            g = st.session_state["parsed_guideline"]
+            campaign_id = g.title or g.product_name or "default"
+            prev = db.get_previous_review(campaign_id, creator_name)
+            if prev:
+                prev_report, prev_round = prev
+                st.info(
+                    f"📋 이전 검수 이력 발견! (Round {prev_round}, "
+                    f"점수: {prev_report.overall_score}점, "
+                    f"상태: {prev_report.overall_status})\n"
+                    f"→ 이번 검수는 **Round {prev_round + 1}**로 진행됩니다."
+                )
+
+        st.subheader("4. 메모 (선택)")
+        review_memo = st.text_area(
+            "가이드라인 보충/수정 사항",
+            placeholder="예: CTA 문구는 말하지 않아도 됨\n예: B&A는 선택사항으로 변경됨",
+            height=100,
+            key="review_memo",
+        )
+        st.caption("가이드라인과 달라진 내용이나 추가 참고사항을 입력하세요.")
 
     st.divider()
 
@@ -388,23 +429,32 @@ with st.sidebar:
 
     has_guideline_input = bool(guideline_files) or ("url_fetched_files" in st.session_state)
 
-    parse_btn = st.button(
-        "📋 가이드라인 파싱",
-        disabled=not (has_guideline_input and api_ok),
-        use_container_width=True,
-    )
-
-    has_video_input = bool(video_files) or bool(gdrive_video_url.strip())
-    review_btn = st.button(
-        "🔍 검수 시작",
-        disabled=not (
-            "parsed_guideline" in st.session_state
-            and has_video_input
-            and api_ok
-        ),
-        use_container_width=True,
-        type="primary",
-    )
+    if not _has_gl:
+        # Step 1: only show parse button
+        parse_btn = st.button(
+            "📋 가이드라인 파싱",
+            disabled=not (has_guideline_input and api_ok),
+            use_container_width=True,
+            type="primary",
+        )
+        review_btn = False
+    else:
+        # Step 2: show both buttons
+        parse_btn = st.button(
+            "📋 가이드라인 다시 파싱",
+            disabled=not (has_guideline_input and api_ok),
+            use_container_width=True,
+        )
+        has_video_input = bool(video_files) or bool(gdrive_video_url.strip())
+        review_btn = st.button(
+            "🔍 검수 시작",
+            disabled=not (
+                has_video_input
+                and api_ok
+            ),
+            use_container_width=True,
+            type="primary",
+        )
 
 # --- Main Area ---
 tab1, tab2, tab3, tab4, tab5 = st.tabs([

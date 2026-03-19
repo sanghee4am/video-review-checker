@@ -24,7 +24,18 @@ st.set_page_config(
     page_title="Video Review Upload",
     page_icon="📤",
     layout="wide",
+    initial_sidebar_state="collapsed",
 )
+
+# --- Hide sidebar navigation (prevent creator access to admin page) ---
+st.markdown("""
+<style>
+    [data-testid="stSidebarNav"] { display: none !important; }
+    [data-testid="stSidebar"] [data-testid="stSidebarContent"] > div:first-child { display: none !important; }
+    button[data-testid="stSidebarCollapsedControl"] { display: none !important; }
+    [data-testid="stSidebar"] { display: none !important; }
+</style>
+""", unsafe_allow_html=True)
 
 # --- i18n ---
 TEXTS = {

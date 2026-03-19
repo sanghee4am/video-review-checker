@@ -21,6 +21,8 @@ OPENAI_API_KEY = _get_secret("OPENAI_API_KEY")
 SUPABASE_URL = _get_secret("SUPABASE_URL")
 SUPABASE_KEY = _get_secret("SUPABASE_KEY")
 
+ADMIN_PASSWORD = _get_secret("ADMIN_PASSWORD")
+
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 
 # 영상 프레임 추출 설정
