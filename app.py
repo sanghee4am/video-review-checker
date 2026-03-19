@@ -468,6 +468,7 @@ with st.sidebar:
         )
 
 # --- Main Area ---
+_top_status = st.container()  # 검수 진행 상태를 최상단에 표시
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📋 가이드라인", "🔍 검수 결과", "🎨 편집 팁",
     "📊 브랜드사 전달", "🔗 업로드 확인",
@@ -632,6 +633,46 @@ with tab1:
                             st.markdown("**수동 검토 필요:**")
                             for flag in report.manual_review_flags:
                                 st.markdown(f"- ⚠️ {flag}")
+
+                        # --- Full review detail (same as what creator sees) ---
+                        with st.expander("📄 전체 검수 결과 보기 (크리에이터 뷰)", expanded=False):
+                            # Scene reviews
+                            if report.scene_reviews:
+                                st.markdown("**🎬 장면별 검수:**")
+                                for sr in report.scene_reviews:
+                                    _sr_icon = {"pass": "✅", "fail": "❌", "warning": "⚠️"}.get(sr.status, "❓")
+                                    _sr_time = f" ({sr.matched_time_range})" if sr.matched_time_range else ""
+                                    st.markdown(
+                                        f"**{_sr_icon} Scene {sr.scene_number}{_sr_time}** — {sr.guideline_description}"
+                                    )
+                                    if sr.findings:
+                                        st.caption(sr.findings)
+                                    if sr.suggestion:
+                                        st.markdown(f"  → 수정 제안: {sr.suggestion}")
+
+                            # Rule reviews
+                            violated = [r for r in report.rule_reviews if r.status != "compliant"]
+                            compliant = [r for r in report.rule_reviews if r.status == "compliant"]
+                            if violated:
+                                st.markdown("**📌 규칙 위반:**")
+                                for rr in violated:
+                                    _rr_icon = "❌" if rr.status == "violated" else "⚠️"
+                                    st.markdown(f"- {_rr_icon} **{rr.rule_description}**")
+                                    if rr.evidence:
+                                        st.caption(f"  근거: {rr.evidence}")
+                                    if rr.suggestion:
+                                        st.caption(f"  → {rr.suggestion}")
+                            if compliant:
+                                st.markdown(f"**✅ 통과 규칙 ({len(compliant)}건):**")
+                                for rr in compliant:
+                                    st.markdown(f"- ✅ {rr.rule_description}")
+
+                            # Revision comparison (re-review)
+                            if report.revision_comparison:
+                                st.markdown("**🔄 이전 대비 변경사항:**")
+                                for rc in report.revision_comparison:
+                                    _rc_icon = {"fixed": "✅", "partial": "🟡", "still_issue": "❌", "new_issue": "🆕"}.get(rc.status, "❓")
+                                    st.markdown(f"- {_rc_icon} {rc.item} — {rc.detail}")
 
                         # --- Admin decision buttons on every review ---
                         rev_id = rev["id"]
@@ -939,7 +980,8 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
             previous_report, prev_round = prev
             current_round = prev_round + 1
 
-    progress_bar = st.progress(0, text="처리 준비 중...")
+    with _top_status:
+        progress_bar = st.progress(0, text="처리 준비 중...")
 
     try:
         # --- Download from Google Drive if needed ---
