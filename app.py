@@ -594,6 +594,7 @@ with tab1:
                 with col_btn:
                     if st.button("상세", key=f"detail_{idx}"):
                         st.session_state["view_creator_detail"] = sub["creator_name"]
+                        st.session_state["creator_name"] = sub["creator_name"]
 
             # Show detailed review history for selected creator
             if "view_creator_detail" in st.session_state:
@@ -655,13 +656,29 @@ with tab1:
                                     db.save_admin_decision(rev_id, "rejected", d_memo)
                                     st.rerun()
 
-                        if report.email_draft:
+                        if report.email_draft and md in ("revision_needed", "rejected"):
+                            st.info("⬇️ **크리에이터에게 전달할 수정 안내 메시지입니다.** 복사해서 메신저/이메일로 전달하세요.")
                             st.text_area(
-                                "이메일 초안",
+                                "이메일 초안 (한국어)",
                                 report.email_draft,
                                 height=120,
                                 key=f"email_draft_{rev_id}",
                             )
+                            if report.email_draft_en:
+                                st.text_area(
+                                    "이메일 초안 (English)",
+                                    report.email_draft_en,
+                                    height=120,
+                                    key=f"email_draft_en_{rev_id}",
+                                )
+                        elif report.email_draft and not md:
+                            with st.expander("📧 이메일 초안 미리보기"):
+                                st.text_area(
+                                    "이메일 초안",
+                                    report.email_draft,
+                                    height=120,
+                                    key=f"email_draft_{rev_id}",
+                                )
 
                 # --- Brand feedback inline (per creator) ---
                 st.markdown("---")
@@ -678,14 +695,37 @@ with tab1:
                 if st.button("📤 피드백 전달", key="detail_bf_submit", use_container_width=True):
                     if _bf_text.strip() and _bf_sub:
                         db.save_brand_feedback(_bf_sub["id"], _bf_text.strip())
-                        st.success(f"✅ {detail_creator}에게 피드백이 전달되었습니다.")
+                        st.success(
+                            f"✅ {detail_creator}에게 피드백이 전달되었습니다.\n\n"
+                            f"📌 **다음 단계:** 크리에이터 상태가 '수정필요'로 변경되었습니다. "
+                            f"크리에이터가 수정 후 재제출하면, 재검수 시 이 피드백이 AI에 자동 반영됩니다."
+                        )
                         st.rerun()
                     elif not _bf_text.strip():
                         st.warning("피드백 내용을 입력해주세요.")
 
-                if st.button("✕ 닫기", key="close_detail"):
-                    del st.session_state["view_creator_detail"]
-                    st.rerun()
+                _detail_col1, _detail_col2 = st.columns(2)
+                with _detail_col1:
+                    if st.button("✕ 닫기", key="close_detail", use_container_width=True):
+                        del st.session_state["view_creator_detail"]
+                        st.rerun()
+                with _detail_col2:
+                    _latest_sub = next((s for s in submissions if s["creator_name"] == detail_creator), None)
+                    _needs_review = _latest_sub and (
+                        _latest_sub.get("admin_decision") == "revision_needed"
+                        or _latest_sub.get("brand_feedback")
+                        or not _latest_sub.get("admin_decision")
+                    )
+                    if _needs_review:
+                        if st.button(
+                            f"🔍 {detail_creator} 재검수하기",
+                            key="review_this_creator",
+                            use_container_width=True,
+                            type="primary",
+                        ):
+                            st.session_state["creator_name"] = detail_creator
+                            st.toast(f"사이드바에 '{detail_creator}' 이름이 설정되었습니다. 영상을 업로드하고 검수를 시작하세요.")
+                            st.rerun()
 
         else:
             st.caption("아직 제출한 크리에이터가 없습니다.")
@@ -720,7 +760,11 @@ with tab1:
                 if st.button("📤 피드백 전달", key="bf_submit", use_container_width=True):
                     if bf_text.strip() and bf_review_id:
                         db.save_brand_feedback(bf_review_id, bf_text.strip())
-                        st.success(f"✅ {bf_creator}에게 피드백이 전달되었습니다.")
+                        st.success(
+                            f"✅ {bf_creator}에게 피드백이 전달되었습니다.\n\n"
+                            f"📌 **다음 단계:** 크리에이터 상태가 '수정필요'로 변경되었습니다. "
+                            f"크리에이터가 수정 후 재제출하면, 재검수 시 이 피드백이 AI에 자동 반영됩니다."
+                        )
                         st.rerun()
                     elif not bf_text.strip():
                         st.warning("피드백 내용을 입력해주세요.")
