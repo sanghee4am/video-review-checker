@@ -242,15 +242,39 @@ def save_admin_decision(review_id: int, decision: str, memo: str = "") -> None:
     }).eq("id", review_id).execute()
 
 
-def save_brand_feedback(review_id: int, feedback: str) -> None:
+def save_brand_feedback(review_id: int, feedback: str, set_revision: bool = True) -> None:
     """Save brand feedback on a review (updates vc_reviews row).
 
+    Also sets admin_decision to 'revision_needed' so the creator sees they need to revise.
     Column: brand_feedback
     """
     sb = _get_client()
-    sb.table("vc_reviews").update({
-        "brand_feedback": feedback,
-    }).eq("id", review_id).execute()
+    update_data: dict = {"brand_feedback": feedback}
+    if set_revision:
+        update_data["admin_decision"] = "revision_needed"
+    sb.table("vc_reviews").update(update_data).eq("id", review_id).execute()
+
+
+def get_latest_brand_feedback(campaign_name: str, creator_name: str) -> Optional[str]:
+    """Get the most recent brand feedback for a creator in a campaign.
+
+    Searches all reviews (not just latest) for one that has brand_feedback set.
+    Returns the feedback text or None.
+    """
+    sb = _get_client()
+    result = (
+        sb.table("vc_reviews")
+        .select("brand_feedback")
+        .eq("campaign_name", campaign_name)
+        .eq("creator_name", creator_name)
+        .neq("brand_feedback", "null")
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if result.data and result.data[0].get("brand_feedback"):
+        return result.data[0]["brand_feedback"]
+    return None
 
 
 def save_caption_check(review_id: int, result: dict) -> None:

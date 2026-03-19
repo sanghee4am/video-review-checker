@@ -393,7 +393,8 @@ with st.sidebar:
         )
         st.caption("이전 검수 이력과 비교하려면 동일한 이름을 사용하세요.")
 
-        # Show previous review info if available
+        # Show previous review info + brand feedback if available
+        _prev_brand_feedback = ""
         if creator_name:
             g = st.session_state["parsed_guideline"]
             campaign_id = g.title or g.product_name or "default"
@@ -406,6 +407,16 @@ with st.sidebar:
                     f"상태: {prev_report.overall_status})\n"
                     f"→ 이번 검수는 **Round {prev_round + 1}**로 진행됩니다."
                 )
+
+            # Check for brand feedback from previous reviews
+            _prev_brand_feedback = db.get_latest_brand_feedback(campaign_id, creator_name) or ""
+            if _prev_brand_feedback:
+                st.warning(
+                    f"💬 **브랜드 피드백 있음** — 이전 리뷰에 브랜드사 피드백이 등록되어 있습니다.\n\n"
+                    f"> {_prev_brand_feedback}\n\n"
+                    f"검수 시 AI가 이 피드백의 반영 여부를 자동으로 확인합니다."
+                )
+            st.session_state["_prev_brand_feedback"] = _prev_brand_feedback
 
         st.subheader("4. 메모 (선택)")
         review_memo = st.text_area(
@@ -932,6 +943,7 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
         # --- Phase 2: Sequential compliance checks (Claude API) ---
         all_results = {}  # filename -> {"processed_video": ..., "report": ...}
         memo = st.session_state.get("review_memo", "")
+        brand_feedback_for_review = st.session_state.get("_prev_brand_feedback", "")
 
         for vid_idx, (filename, processed_video) in enumerate(processed_videos.items()):
             base_pct = 30 + int((vid_idx / num_videos) * 65)
@@ -952,6 +964,7 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
                 video=processed_video,
                 progress_callback=update_progress,
                 memo=memo,
+                brand_feedback=brand_feedback_for_review,
                 previous_report=previous_report,
                 review_round=current_round,
             )

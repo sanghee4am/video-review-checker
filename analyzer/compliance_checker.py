@@ -69,7 +69,7 @@ You are given:
 {memo_section}
 
 YOUR TASK: Using the detailed frame analysis, perform a thorough compliance check.
-
+{brand_feedback_section}
 === CRITICAL REVIEW GUIDELINES ===
 
 **IMPORTANT - What to EXCLUDE from review:**
@@ -584,6 +584,7 @@ def run_compliance_check(
     video: ProcessedVideo,
     progress_callback=None,
     memo: str = "",
+    brand_feedback: str = "",
     previous_report: Optional[ReviewReport] = None,
     review_round: int = 1,
 ) -> ReviewReport:
@@ -660,9 +661,25 @@ def run_compliance_check(
         memo_section = f"\n5. Additional notes/memos from the reviewer:\n{memo}"
         memo_rules_section = f"\n\n**REVIEWER MEMO (IMPORTANT - overrides guideline where applicable):**\n{memo}\n- If the memo says a certain requirement is waived, mark it as compliant."
 
+    # Build brand feedback section for prompt
+    brand_feedback_section = ""
+    if brand_feedback:
+        brand_feedback_section = (
+            "\n\n=== BRAND FEEDBACK (CRITICAL — must verify) ===\n"
+            "The brand/client provided the following feedback on a PREVIOUS version of this video.\n"
+            "The creator should have addressed these points in this new submission.\n"
+            "You MUST check each brand feedback item and report whether it was addressed.\n\n"
+            f"Brand feedback:\n{brand_feedback}\n\n"
+            "For EACH brand feedback item, include in your findings:\n"
+            "- Whether the issue was fixed (with timestamp evidence)\n"
+            "- If NOT fixed, add it to revision_items with high priority\n"
+            "- Add a dedicated section in the summary about brand feedback compliance\n"
+        )
+
     final_prompt = FINAL_REVIEW_PROMPT.format(
         memo_section=memo_section,
         memo_rules_section=memo_rules_section,
+        brand_feedback_section=brand_feedback_section,
     )
 
     final_content = []
