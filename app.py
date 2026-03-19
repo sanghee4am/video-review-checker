@@ -457,15 +457,19 @@ with st.sidebar:
             use_container_width=True,
         )
         has_video_input = bool(video_files) or bool(gdrive_video_url.strip())
+        has_creator_name = bool(st.session_state.get("creator_name", "").strip())
         review_btn = st.button(
             "🔍 검수 시작",
             disabled=not (
                 has_video_input
+                and has_creator_name
                 and api_ok
             ),
             use_container_width=True,
             type="primary",
         )
+        if has_video_input and not has_creator_name:
+            st.caption("⚠️ 크리에이터 이름을 입력해야 검수를 시작할 수 있습니다.")
 
 # --- Main Area ---
 _top_status = st.container()  # 검수 진행 상태를 최상단에 표시
@@ -772,6 +776,43 @@ with tab1:
             st.caption("아직 제출한 크리에이터가 없습니다.")
 
         # ============================================================
+        # SECTION 2.5: 크리에이터 업로드 링크 (항상 표시)
+        # ============================================================
+        st.divider()
+        with st.expander("🔗 크리에이터 업로드 링크", expanded=False):
+            from urllib.parse import quote as _url_quote
+            _link_base = "https://video-review-checker-2f6utmtejjnlbpi3xy5tsq.streamlit.app/Creator_Upload"
+            _link_campaign = _campaign_id_tab1
+
+            # Show links for creators who already submitted
+            if submissions:
+                st.markdown("**제출한 크리에이터:**")
+                _existing_links = []
+                for s in submissions:
+                    cname = s["creator_name"]
+                    curl = f"{_link_base}?campaign={_url_quote(_link_campaign)}&creator={_url_quote(cname)}"
+                    _existing_links.append(f"{cname}\n{curl}")
+                st.code("\n\n".join(_existing_links), language=None)
+
+            # Input for new creators
+            st.markdown("**새 크리에이터 링크 생성:**")
+            _new_creators = st.text_area(
+                "크리에이터 이름 (한 줄에 하나씩)",
+                placeholder="@beauty_creator\n@food_lover",
+                height=80,
+                key="quick_link_creators",
+            )
+            if st.button("🔗 생성", key="quick_link_btn", use_container_width=True):
+                _names = [c.strip() for c in _new_creators.strip().split("\n") if c.strip()]
+                if _names:
+                    _new_links = []
+                    for c in _names:
+                        curl = f"{_link_base}?campaign={_url_quote(_link_campaign)}&creator={_url_quote(c)}"
+                        _new_links.append(f"{c}\n{curl}")
+                    st.code("\n\n".join(_new_links), language=None)
+                    st.caption("위 내용을 복사해서 각 크리에이터에게 전달해주세요.")
+
+        # ============================================================
         # SECTION 3: 브랜드 피드백 일괄 전달
         # ============================================================
         st.divider()
@@ -877,11 +918,19 @@ with tab1:
                 st.divider()
                 st.markdown("**🎬 장면별 가이드**")
                 for scene in g.scenes:
-                    st.markdown(
-                        f"- **Scene {scene.scene_number}**"
+                    header = (
+                        f"Scene {scene.scene_number}"
                         + (f" ({scene.time_range})" if scene.time_range else "")
-                        + f": {scene.description}"
                     )
+                    with st.expander(f"🎬 {header}: {scene.description}", expanded=False):
+                        if scene.visual_direction:
+                            st.markdown(f"**촬영 지시:** {scene.visual_direction}")
+                        if scene.script_suggestion:
+                            st.markdown(f"**스크립트 제안:** _{scene.script_suggestion}_")
+                        if scene.text_overlay:
+                            st.markdown(f"**텍스트 오버레이:** `{scene.text_overlay}`")
+                        if not (scene.visual_direction or scene.script_suggestion or scene.text_overlay):
+                            st.caption("추가 상세 정보 없음")
 
             if g.mandatory_elements:
                 st.divider()
@@ -1316,34 +1365,6 @@ with tab2:
                         unsafe_allow_html=True,
                     )
 
-                # --- Admin Manual Decision (works with session review or from dashboard) ---
-                _rid = st.session_state.get("last_review_id")
-                if _rid:
-                    st.markdown("**어드민 수동 결정:**")
-                    manual_memo = st.text_input(
-                        "메모 (선택)",
-                        placeholder="수동 확인 후 판단 근거를 입력하세요",
-                        key="manual_decision_memo",
-                    )
-                    col_approve, col_revision, col_reject = st.columns(3)
-                    with col_approve:
-                        if st.button("✅ 승인", key="manual_approve", use_container_width=True):
-                            db.save_admin_decision(_rid, "approved", manual_memo)
-                            st.success("✅ 승인 처리되었습니다.")
-                            st.rerun()
-                    with col_revision:
-                        if st.button("📝 수정 필요", key="manual_revision", use_container_width=True):
-                            db.save_admin_decision(_rid, "revision_needed", manual_memo)
-                            st.warning("📝 수정 필요로 처리되었습니다.")
-                            st.rerun()
-                    with col_reject:
-                        if st.button("❌ 반려", key="manual_reject", use_container_width=True, type="primary"):
-                            db.save_admin_decision(_rid, "rejected", manual_memo)
-                            st.error("❌ 반려 처리되었습니다.")
-                            st.rerun()
-                else:
-                    st.caption("💡 가이드라인 탭의 '제출 현황 → 상세'에서도 수동 결정이 가능합니다.")
-
             # --- Revision Comparison (re-review) ---
             if report.revision_comparison:
                 st.markdown("### 🔄 이전 검수 대비 변경사항")
@@ -1435,6 +1456,33 @@ with tab2:
                         )
                         st.toast("Copied to clipboard!")
 
+            st.divider()
+
+        # --- Admin Manual Decision (always visible) ---
+        _rid = st.session_state.get("last_review_id")
+        if _rid:
+            st.markdown("### ⚖️ 어드민 최종 결정")
+            manual_memo = st.text_input(
+                "메모 (선택)",
+                placeholder="판단 근거를 입력하세요",
+                key="manual_decision_memo",
+            )
+            col_approve, col_revision, col_reject = st.columns(3)
+            with col_approve:
+                if st.button("✅ 승인", key="manual_approve", use_container_width=True):
+                    db.save_admin_decision(_rid, "approved", manual_memo)
+                    st.success("✅ 승인 처리되었습니다.")
+                    st.rerun()
+            with col_revision:
+                if st.button("📝 수정 필요", key="manual_revision", use_container_width=True):
+                    db.save_admin_decision(_rid, "revision_needed", manual_memo)
+                    st.warning("📝 수정 필요로 처리되었습니다.")
+                    st.rerun()
+            with col_reject:
+                if st.button("❌ 반려", key="manual_reject", use_container_width=True, type="primary"):
+                    db.save_admin_decision(_rid, "rejected", manual_memo)
+                    st.error("❌ 반려 처리되었습니다.")
+                    st.rerun()
             st.divider()
 
         # --- Passed scenes (collapsible) ---
