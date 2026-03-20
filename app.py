@@ -592,14 +592,14 @@ with tab1:
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
                     st.markdown(
-                        f"{score_icons(sc)} **{sub['creator_name']}** — "
+                        f"{score_icons(sc)} **{sub.get('creator_name', '알 수 없음')}** — "
                         f"Round {sub['round']} | 점수: {sc} {st_icon} | {ts}"
                         f"{extra_badges}"
                     )
                 with col_btn:
                     if st.button("상세", key=f"detail_{idx}"):
-                        st.session_state["view_creator_detail"] = sub["creator_name"]
-                        st.session_state["creator_name"] = sub["creator_name"]
+                        st.session_state["view_creator_detail"] = sub.get("creator_name", "알 수 없음")
+                        st.session_state["creator_name"] = sub.get("creator_name", "알 수 없음")
 
             # Show detailed review history for selected creator
             if "view_creator_detail" in st.session_state:
