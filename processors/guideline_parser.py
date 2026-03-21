@@ -67,6 +67,8 @@ Important instructions:
 def resize_image_bytes(image_bytes: bytes, max_w: int = MAX_IMAGE_WIDTH, max_h: int = MAX_IMAGE_HEIGHT) -> bytes:
     """Resize image to fit within max dimensions while maintaining aspect ratio."""
     img = Image.open(io.BytesIO(image_bytes))
+    if img.mode in ("RGBA", "P", "LA"):
+        img = img.convert("RGB")
     img.thumbnail((max_w, max_h), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)

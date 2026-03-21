@@ -21,3 +21,9 @@ review_history/
 # IDE
 .vscode/
 .idea/
+
+# Pipeline — OAuth 토큰 및 민감 파일
+pipeline/credentials.json
+pipeline/token*.json
+pipeline/.processed_ids.txt
+pipeline/pipeline.log
