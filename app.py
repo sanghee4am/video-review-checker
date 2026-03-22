@@ -1010,6 +1010,53 @@ with tab1:
     else:
         st.info("👈 사이드바에서 가이드라인 파일을 업로드하고 '가이드라인 파싱' 버튼을 눌러주세요.")
 
+# --- Sheet & Slack integration ---
+def _try_sheet_and_slack(campaign_name: str, creator_name: str, report):
+    """검수 완료 후 시트 N열 기입 + 슬랙 알림. 실패해도 검수 결과에 영향 없음."""
+    from pipeline.config_pipeline import CAMPAIGN_CONFIGS, SLACK_BOT_TOKEN, SLACK_CHANNEL_ID
+
+    config = CAMPAIGN_CONFIGS.get(campaign_name)
+
+    # 시트 기입
+    if config:
+        try:
+            from pipeline.sheet_updater import write_review_comment
+            status = report.overall_status
+            if report.overall_score >= 90 and not report.manual_review_flags:
+                status = "auto_approved"
+            write_review_comment(
+                sheet_id=config["sheet_id"],
+                sheet_tab=config["sheet_tab"],
+                tiktok_handle=creator_name,
+                comment=report.brand_sheet_comment or "",
+                score=report.overall_score,
+                status=status,
+            )
+            st.toast("📊 시트 N열 업데이트 완료")
+        except Exception as e:
+            st.toast(f"⚠️ 시트 업데이트 실패: {e}")
+
+    # 슬랙 알림
+    if SLACK_BOT_TOKEN:
+        try:
+            from pipeline.slack_notifier import notify_review_complete
+            sheet_url = f"https://docs.google.com/spreadsheets/d/{config['sheet_id']}" if config else ""
+            status = report.overall_status
+            if report.overall_score >= 90 and not report.manual_review_flags:
+                status = "auto_approved"
+            notify_review_complete(
+                campaign_name=campaign_name,
+                tiktok_handle=creator_name,
+                score=report.overall_score,
+                status=status,
+                sheet_url=sheet_url,
+                manual_flags=report.manual_review_flags,
+            )
+            st.toast("💬 슬랙 알림 발송 완료")
+        except Exception as e:
+            st.toast(f"⚠️ 슬랙 알림 실패: {e}")
+
+
 # ===== Video Review (multi-video batch) =====
 if review_btn and has_video_input and "parsed_guideline" in st.session_state:
     from processors.video_processor import process_video, process_videos_parallel
@@ -1137,53 +1184,6 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
         st.error(f"검수 오류: {e}")
         import traceback
         st.code(traceback.format_exc())
-
-
-# --- Sheet & Slack integration ---
-def _try_sheet_and_slack(campaign_name: str, creator_name: str, report):
-    """검수 완료 후 시트 N열 기입 + 슬랙 알림. 실패해도 검수 결과에 영향 없음."""
-    from pipeline.config_pipeline import CAMPAIGN_CONFIGS, SLACK_BOT_TOKEN, SLACK_CHANNEL_ID
-
-    config = CAMPAIGN_CONFIGS.get(campaign_name)
-
-    # 시트 기입
-    if config:
-        try:
-            from pipeline.sheet_updater import write_review_comment
-            status = report.overall_status
-            if report.overall_score >= 90 and not report.manual_review_flags:
-                status = "auto_approved"
-            write_review_comment(
-                sheet_id=config["sheet_id"],
-                sheet_tab=config["sheet_tab"],
-                tiktok_handle=creator_name,
-                comment=report.brand_sheet_comment or "",
-                score=report.overall_score,
-                status=status,
-            )
-            st.toast("📊 시트 N열 업데이트 완료")
-        except Exception as e:
-            st.toast(f"⚠️ 시트 업데이트 실패: {e}")
-
-    # 슬랙 알림
-    if SLACK_BOT_TOKEN:
-        try:
-            from pipeline.slack_notifier import notify_review_complete
-            sheet_url = f"https://docs.google.com/spreadsheets/d/{config['sheet_id']}" if config else ""
-            status = report.overall_status
-            if report.overall_score >= 90 and not report.manual_review_flags:
-                status = "auto_approved"
-            notify_review_complete(
-                campaign_name=campaign_name,
-                tiktok_handle=creator_name,
-                score=report.overall_score,
-                status=status,
-                sheet_url=sheet_url,
-                manual_flags=report.manual_review_flags,
-            )
-            st.toast("💬 슬랙 알림 발송 완료")
-        except Exception as e:
-            st.toast(f"⚠️ 슬랙 알림 실패: {e}")
 
 
 # --- Helper functions ---
