@@ -975,6 +975,8 @@ def _render_upload_form(campaign_id: str, c_name: str, guideline_obj):
         from processors.video_processor import process_video
         from analyzer.compliance_checker import run_compliance_check
 
+        import re as _re_draft
+
         previous_report = None
         current_round = 1
         prev = db.get_previous_review(campaign_id, c_name)
@@ -1009,6 +1011,13 @@ def _render_upload_form(campaign_id: str, c_name: str, guideline_obj):
             else:
                 filename = str(video_files.name)
                 video_bytes = video_files.read()
+
+            # Extract draft number from filename
+            _dm = _re_draft.search(r'draft\s*(\d+)', filename, _re_draft.IGNORECASE)
+            if not _dm:
+                _dm = _re_draft.search(r'(\d+)\s*차', filename)
+            if _dm:
+                current_round = int(_dm.group(1))
 
             progress.progress(25, text=t("analyzing"))
             processed_video = process_video(video_bytes, str(filename))
@@ -1246,6 +1255,43 @@ else:
         # WAITING — AI review done, waiting for brand feedback
         st.info(t("stage_waiting"))
         _render_review_results(latest_report)
+
+    # --- Show previous round results (if multiple rounds exist) ---
+    _older_reviews = _history[1:]  # skip latest (already shown above)
+    if _older_reviews:
+        st.divider()
+        _prev_label = "이전 검수 이력" if st.session_state.get("creator_lang", "ko") == "ko" else "Previous Reviews"
+        st.markdown(f"### 📂 {_prev_label}")
+        for _prev in _older_reviews:
+            _pr_sc = _prev.get("overall_score", 0)
+            _pr_round = _prev.get("round", 1)
+            _pr_ts = _prev["created_at"][:16].replace("T", " ") if _prev.get("created_at") else ""
+            _pr_status = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}.get(
+                _prev.get("overall_status", ""), "❓"
+            )
+            with st.expander(
+                f"Draft {_pr_round} — {_pr_sc}점 {_pr_status} ({_pr_ts})",
+                expanded=len(_older_reviews) == 1,
+            ):
+                _pr_report = ReviewReport.model_validate(_prev["report_json"])
+                st.markdown(f"**{t('summary')}:** {_pr_report.summary}")
+                _pr_issues = [s for s in _pr_report.scene_reviews if s.status in ("fail", "warning")]
+                if _pr_issues:
+                    st.markdown(f"**{t('issues_title')}:**")
+                    for _pr_sr in _pr_issues:
+                        _icon = "❌" if _pr_sr.status == "fail" else "⚠️"
+                        _time = f" ({_pr_sr.matched_time_range})" if _pr_sr.matched_time_range else ""
+                        st.markdown(f"- {_icon} Scene {_pr_sr.scene_number}{_time}: {_pr_sr.findings[:200]}")
+                # Thumbnails
+                if _pr_report.scene_thumbnails:
+                    _thumb_cols = st.columns(min(len(_pr_report.scene_thumbnails), 6))
+                    for _ti, (_sn, _tb64) in enumerate(_pr_report.scene_thumbnails.items()):
+                        with _thumb_cols[_ti % len(_thumb_cols)]:
+                            st.image(
+                                f"data:image/jpeg;base64,{_tb64}",
+                                caption=f"Scene {_sn}",
+                                use_container_width=True,
+                            )
 
 st.divider()
 st.caption(t("contact"))

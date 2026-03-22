@@ -1081,14 +1081,34 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
     c_name = st.session_state.get("creator_name", "").strip()
     campaign_id = guideline.title or guideline.product_name or "default"
 
+    # Extract draft number from filename (e.g., "creator_draft2.mp4" → 2)
+    import re as _re_draft
+    _draft_round = None
+    _all_filenames = []
+    if gdrive_video_url.strip():
+        pass  # filename not yet available, will extract after download
+    elif video_files:
+        for vf in (video_files if isinstance(video_files, list) else [video_files]):
+            _all_filenames.append(vf.name)
+    for _fn in _all_filenames:
+        _dm = _re_draft.search(r'draft\s*(\d+)', _fn, _re_draft.IGNORECASE)
+        if _dm:
+            _draft_round = int(_dm.group(1))
+            break
+        _dm = _re_draft.search(r'(\d+)\s*차', _fn)
+        if _dm:
+            _draft_round = int(_dm.group(1))
+            break
+
     # Get previous review for comparison
     previous_report = None
-    current_round = 1
+    current_round = _draft_round or 1
     if c_name:
         prev = db.get_previous_review(campaign_id, c_name)
         if prev:
             previous_report, prev_round = prev
-            current_round = prev_round + 1
+            if not _draft_round:
+                current_round = prev_round + 1
 
     with _top_status:
         progress_bar = st.progress(0, text="처리 준비 중...")
@@ -1117,6 +1137,15 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
             tmp_path.unlink(missing_ok=True)
             video_items.append((filename, video_bytes))
             st.success(f"다운로드 완료: {filename} ({len(video_bytes) // (1024*1024)}MB)")
+
+            # draft 번호 추출 (Drive 다운로드 후)
+            if not _draft_round:
+                _dm = _re_draft.search(r'draft\s*(\d+)', filename, _re_draft.IGNORECASE)
+                if not _dm:
+                    _dm = _re_draft.search(r'(\d+)\s*차', filename)
+                if _dm:
+                    _draft_round = int(_dm.group(1))
+                    current_round = _draft_round
 
             # 크리에이터 이름 미입력 시 파일명에서 자동 추출 (틱톡핸들_아무거나.mp4)
             if not c_name and "_" in filename:
@@ -1605,6 +1634,60 @@ with tab2:
                     f'<div class="mandatory-grid">{"".join(items_html)}</div>',
                     unsafe_allow_html=True,
                 )
+
+        # --- Previous round results (auto-display) ---
+        _prev_creator = st.session_state.get("last_review_creator", "")
+        _prev_campaign = st.session_state.get("last_review_campaign", "")
+        if _prev_creator and _prev_campaign:
+            _prev_reviews = db.get_creator_reviews(_prev_campaign, _prev_creator)
+            # Show older rounds (skip latest which is already displayed above)
+            _older = [r for r in _prev_reviews if r.get("id") != st.session_state.get("last_review_id")]
+            if _older:
+                st.divider()
+                st.markdown(f"### 📂 이전 검수 이력 ({_prev_creator})")
+                for _prev_rev in _older:
+                    _pr_sc = _prev_rev.get("overall_score", 0)
+                    _pr_round = _prev_rev.get("round", 1)
+                    _pr_ts = _prev_rev["created_at"][:16].replace("T", " ") if _prev_rev.get("created_at") else ""
+                    _pr_status = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}.get(
+                        _prev_rev.get("overall_status", ""), "❓"
+                    )
+                    _pr_color = "#22c55e" if _pr_sc >= 80 else ("#f59e0b" if _pr_sc >= 60 else "#ef4444")
+                    _pr_label = f"Draft {_pr_round}" if _pr_round else f"Round {_pr_round}"
+
+                    with st.expander(
+                        f"{_pr_label} — {_pr_sc}점 {_pr_status} ({_pr_ts})",
+                        expanded=len(_older) == 1,
+                    ):
+                        _pr_report = ReviewReport.model_validate(_prev_rev["report_json"])
+                        st.markdown(f"**요약:** {_pr_report.summary}")
+
+                        # Scene issues
+                        _pr_issues = [s for s in _pr_report.scene_reviews if s.status in ("fail", "warning")]
+                        if _pr_issues:
+                            st.markdown("**수정 필요 항목:**")
+                            for _pr_sr in _pr_issues:
+                                _icon = "❌" if _pr_sr.status == "fail" else "⚠️"
+                                _time = f" ({_pr_sr.matched_time_range})" if _pr_sr.matched_time_range else ""
+                                st.markdown(f"- {_icon} Scene {_pr_sr.scene_number}{_time}: {_pr_sr.findings[:200]}")
+
+                        # Thumbnails from saved report
+                        if _pr_report.scene_thumbnails:
+                            _thumb_cols = st.columns(min(len(_pr_report.scene_thumbnails), 6))
+                            for _ti, (_sn, _tb64) in enumerate(_pr_report.scene_thumbnails.items()):
+                                with _thumb_cols[_ti % len(_thumb_cols)]:
+                                    st.image(
+                                        f"data:image/jpeg;base64,{_tb64}",
+                                        caption=f"Scene {_sn}",
+                                        use_container_width=True,
+                                    )
+
+                        if _prev_rev.get("admin_decision"):
+                            _ad_labels = {"approved": "✅ 승인", "auto_approved": "🤖 자동승인",
+                                         "revision_needed": "📝 수정요청", "rejected": "❌ 반려"}
+                            st.info(f"**결정:** {_ad_labels.get(_prev_rev['admin_decision'], _prev_rev['admin_decision'])}")
+                        if _prev_rev.get("brand_feedback"):
+                            st.warning(f"**브랜드 피드백:** {_prev_rev['brand_feedback']}")
 
     else:
         st.info("검수가 완료되면 여기에 결과가 표시됩니다.")
