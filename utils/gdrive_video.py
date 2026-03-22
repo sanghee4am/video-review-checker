@@ -94,63 +94,17 @@ def download_gdrive_video(url: str, progress_callback=None) -> tuple[str, Path]:
     if progress_callback:
         progress_callback(0, None)
 
-    # 1) 서비스 계정 Drive API로 시도 (공개 설정 불필요)
-    api_error = None
-    try:
-        filename = _download_via_api(file_id, tmp_path)
-    except Exception as e:
-        filename = None
-        api_error = e
+    # Drive API로 다운로드 (서비스 계정 인증)
+    filename = _download_via_api(file_id, tmp_path)
+
     if filename and tmp_path.exists() and tmp_path.stat().st_size > 1000:
         if progress_callback:
             mb = tmp_path.stat().st_size / (1024 * 1024)
             progress_callback(mb, mb)
         return filename, tmp_path
 
-    # API 실패 시 원인 출력 후 gdown 폴백
-    if api_error:
-        print(f"[gdrive] Drive API 실패: {api_error}")
-    else:
-        print(f"[gdrive] Drive API: filename={filename}, exists={tmp_path.exists()}, size={tmp_path.stat().st_size if tmp_path.exists() else 0}")
     tmp_path.unlink(missing_ok=True)
-    tmp_path = Path(tempfile.mktemp(suffix=".mp4"))
-
-    # 2) gdown 폴백 (공개 링크만 가능)
-    try:
-        output = gdown.download(
-            id=file_id,
-            output=str(tmp_path),
-            quiet=False,
-            fuzzy=True,
-        )
-
-        if output is None or not tmp_path.exists():
-            raise ValueError(
-                "Google Drive에서 파일을 다운로드할 수 없습니다.\n"
-                "파일이 '링크가 있는 모든 사람' 공유 설정인지 확인해주세요.\n"
-                "또는 파일이 삭제/이동되었을 수 있습니다."
-            )
-
-        file_size = tmp_path.stat().st_size
-        if file_size < 1000:
-            tmp_path.unlink(missing_ok=True)
-            raise ValueError(
-                "다운로드된 파일이 너무 작습니다. 파일 링크를 확인해주세요.\n"
-                "파일이 공유 설정되어 있는지, 또는 링크가 올바른지 확인해주세요."
-            )
-
-        if progress_callback:
-            mb = file_size / (1024 * 1024)
-            progress_callback(mb, mb)
-
-        filename = Path(output).name if output else f"video_{file_id}.mp4"
-        return filename, tmp_path
-
-    except Exception as e:
-        tmp_path.unlink(missing_ok=True)
-        if "ValueError" in type(e).__name__:
-            raise
-        raise ValueError(
-            f"Google Drive 다운로드 실패: {e}\n"
-            "파일이 '링크가 있는 모든 사람' 공유 설정인지 확인해주세요."
-        )
+    raise ValueError(
+        f"Google Drive 다운로드 실패.\n"
+        f"서비스 계정에 파일 접근 권한이 있는지 확인해주세요."
+    )
