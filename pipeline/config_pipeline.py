@@ -10,7 +10,14 @@ load_dotenv()
 
 
 def _e(key: str, default: str = "") -> str:
-    return os.getenv(key, default)
+    val = os.getenv(key, "")
+    if val:
+        return val
+    try:
+        import streamlit as st
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
 
 
 # ── Google OAuth ────────────────────────────────────────
@@ -45,12 +52,16 @@ CAMPAIGN_CONFIGS = {
         "sheet_id": "1DWgBz5ayhb_KRpkWU_1M92vFmLa8anERisGU154_1yY",
         "sheet_tab": "소재 수급 리스트",
         "guideline_name": "Magis Lene",  # vc_guidelines의 campaign_name
+        "drive_folder_1st": "1i0oF_0cf9ebcUUCCpAJBLGiCcyWwtHjs",  # 1st Draft 폴더
+        "drive_folder_2nd": "1b76QTr66XCDSgryev-RUdQytt93lx5gJ",  # 2nd Draft 폴더
     },
     # 새 캠페인 추가 시 여기에 추가
     # "Brand Name": {
     #     "sheet_id": "...",
     #     "sheet_tab": "소재 수급 리스트",
     #     "guideline_name": "...",
+    #     "drive_folder_1st": "...",
+    #     "drive_folder_2nd": "...",
     # },
 }
 

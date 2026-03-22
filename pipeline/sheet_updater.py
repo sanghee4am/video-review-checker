@@ -5,6 +5,7 @@ TikTok ID(C열)로 행을 찾아 해당 열에 값 기입.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -34,7 +35,29 @@ def _col_to_idx(col: str) -> int:
 
 
 def _get_sheets_service():
-    """Sheets API 서비스 객체 반환."""
+    """Sheets API 서비스 객체 반환. 서비스 계정 우선, OAuth 폴백."""
+    # 1) 서비스 계정 (Streamlit Cloud)
+    try:
+        from google.oauth2 import service_account
+        try:
+            import streamlit as st
+            sa_info = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
+        except Exception:
+            import os
+            sa_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_PATH", "")
+            if sa_path and Path(sa_path).exists():
+                sa_info = json.loads(Path(sa_path).read_text())
+            else:
+                sa_info = None
+        if sa_info:
+            creds = service_account.Credentials.from_service_account_info(
+                sa_info, scopes=SCOPES
+            )
+            return build("sheets", "v4", credentials=creds)
+    except Exception:
+        pass
+
+    # 2) OAuth 폴백 (로컬)
     token_path = GOOGLE_TOKEN_PATH.replace(".json", "_sheets.json")
     creds = None
 
