@@ -56,28 +56,25 @@ def _get_drive_service():
 
 
 def _download_via_api(file_id: str, tmp_path: Path) -> str | None:
-    """Drive API로 파일 다운로드. 성공 시 파일명 반환, 실패 시 None."""
+    """Drive API로 파일 다운로드. 성공 시 파일명 반환, 실패 시 예외."""
     from googleapiclient.http import MediaIoBaseDownload
 
     service = _get_drive_service()
     if not service:
-        return None
+        raise RuntimeError("Drive 서비스 계정 인증 실패 (GOOGLE_SERVICE_ACCOUNT 시크릿 확인)")
 
-    try:
-        file_info = service.files().get(
-            fileId=file_id, fields="name"
-        ).execute()
+    file_info = service.files().get(
+        fileId=file_id, fields="name"
+    ).execute()
 
-        request = service.files().get_media(fileId=file_id)
-        with open(tmp_path, "wb") as f:
-            downloader = MediaIoBaseDownload(f, request)
-            done = False
-            while not done:
-                _, done = downloader.next_chunk()
+    request = service.files().get_media(fileId=file_id)
+    with open(tmp_path, "wb") as f:
+        downloader = MediaIoBaseDownload(f, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
 
-        return file_info.get("name", f"video_{file_id}.mp4")
-    except Exception:
-        return None
+    return file_info.get("name", f"video_{file_id}.mp4")
 
 
 def download_gdrive_video(url: str, progress_callback=None) -> tuple[str, Path]:
@@ -98,14 +95,23 @@ def download_gdrive_video(url: str, progress_callback=None) -> tuple[str, Path]:
         progress_callback(0, None)
 
     # 1) 서비스 계정 Drive API로 시도 (공개 설정 불필요)
-    filename = _download_via_api(file_id, tmp_path)
+    api_error = None
+    try:
+        filename = _download_via_api(file_id, tmp_path)
+    except Exception as e:
+        filename = None
+        api_error = e
     if filename and tmp_path.exists() and tmp_path.stat().st_size > 1000:
         if progress_callback:
             mb = tmp_path.stat().st_size / (1024 * 1024)
             progress_callback(mb, mb)
         return filename, tmp_path
 
-    # API 실패 시 임시 파일 정리
+    # API 실패 시 원인 출력 후 gdown 폴백
+    if api_error:
+        print(f"[gdrive] Drive API 실패: {api_error}")
+    else:
+        print(f"[gdrive] Drive API: filename={filename}, exists={tmp_path.exists()}, size={tmp_path.stat().st_size if tmp_path.exists() else 0}")
     tmp_path.unlink(missing_ok=True)
     tmp_path = Path(tempfile.mktemp(suffix=".mp4"))
 
