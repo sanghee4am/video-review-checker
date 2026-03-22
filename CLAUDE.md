@@ -48,6 +48,15 @@ analyzer/
   compliance_checker.py # AI 검수 로직 (brand_feedback 자동 주입 포함)
 utils/
   gdrive_video.py       # Google Drive 영상 다운로드 (gdown)
+pipeline/               # 자동화 파이프라인 (로컬 실행)
+  config_pipeline.py    # 파이프라인 설정 (캠페인별 시트/드라이브/가이드라인 매핑)
+  drive_poller.py       # Drive 폴더 스캔 — 새 파일 감지 및 핸들 파싱
+  drive_handler.py      # Drive 파일 업로드/다운로드
+  sheet_updater.py      # Sheets M열(드라이브링크), N열(AI검수결과) 기입
+  slack_notifier.py     # Slack 검수완료 알림
+  video_reviewer.py     # AI 검수 래퍼 (process_video + run_compliance_check)
+  main.py               # 파이프라인 오케스트레이터 (1회 실행)
+  .processed_ids.txt    # 처리 완료된 파일 ID 기록 (중복 방지)
 requirements.txt        # Python 패키지
 packages.txt            # 시스템 패키지 (ffmpeg 등)
 ```
@@ -64,7 +73,33 @@ packages.txt            # 시스템 패키지 (ffmpeg 등)
 - commit 후 push하면 Streamlit Cloud 자동 배포
 - 브랜치: main 직접 push
 
+## Pipeline 사용법
+크리에이터 영상을 수동으로 드라이브 폴더에 업로드한 뒤 아래 커맨드 1회 실행.
+
+**파일명 규칙:** `{틱톡핸들}_{파일명}.mp4`
+예: `lucyhan_draft1.mp4`, `nipzreal07_video.mov`
+
+**드라이브 폴더:**
+- 1차 드래프트: `https://drive.google.com/drive/folders/1i0oF_0cf9ebcUUCCpAJBLGiCcyWwtHjs`
+- 2차 드래프트: `https://drive.google.com/drive/folders/1b76QTr66XCDSgryev-RUdQytt93lx5gJ`
+
+**실행:**
+```bash
+cd ~/video-review-checker
+python3.11 -m pipeline.main
+```
+
+실행하면 새 파일 자동 감지 → AI 검수 → 시트 M/N열 기입 → Slack 알림까지 한 번에 처리.
+이미 처리된 파일은 `pipeline/.processed_ids.txt`에 기록되어 재처리되지 않음.
+
+**새 캠페인 추가 시:** `pipeline/config_pipeline.py`의 `CAMPAIGN_CONFIGS`에 추가.
+
 ## 최근 변경 이력
+- `2026-03-21`: 메일 기반 파이프라인 → 드라이브 폴더 폴링 방식으로 전환
+  - `drive_poller.py` 신규 — 1st/2nd Draft 폴더 스캔, 파일명에서 틱톡핸들 파싱
+  - `main.py` 교체 — 드라이브 파일 기반 1회 실행 방식
+  - `config_pipeline.py` — `drive_folder_1st`, `drive_folder_2nd` 추가
+  - `gmail_watcher.py` 비활성화 (파일은 유지, main에서 미사용)
 - `be6311b` (2026-03-20): creator_name 키 없는 레코드 크래시 방지 (.get() 처리)
 - `e93ba8a` (2026-03-20): 워크플로우 끊김 수정 — 어드민 결정 항상 표시, 크리에이터 필수화, 씬 상세 복원, 링크 관리
 - `3ae2124`: 검수 로딩바 최상단 이동 + Tab1 상세에 전체 검수 결과 뷰

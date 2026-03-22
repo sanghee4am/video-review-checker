@@ -161,6 +161,13 @@ TEXTS = {
         "priority_high": "🔴 필수 수정",
         "priority_medium": "🟡 권장 수정",
         "priority_low": "🟢 참고",
+        "stage_no_review": "아직 검수 전입니다. 영상을 업로드해주세요.",
+        "stage_under_80": "가이드라인 미충족 — 아래 수정사항을 반영하여 다시 제출해주세요.",
+        "stage_waiting": "검수 완료 — 고객사 피드백을 기다리고 있습니다.",
+        "stage_feedback": "브랜드 피드백이 도착했습니다. 수정 후 재제출해주세요.",
+        "stage_approved": "최종 승인! 영상을 플랫폼에 업로드하고 캡션을 검수해주세요.",
+        "stage_done": "모든 검수가 완료되었습니다!",
+        "resubmit_title": "수정본 제출",
     },
     "en": {
         "hero_title": "Video Review Upload",
@@ -284,6 +291,13 @@ TEXTS = {
         "priority_high": "🔴 Must Fix",
         "priority_medium": "🟡 Suggested",
         "priority_low": "🟢 FYI",
+        "stage_no_review": "No review yet. Please upload your video.",
+        "stage_under_80": "Guidelines not met — please fix the issues below and resubmit.",
+        "stage_waiting": "Review complete — waiting for brand feedback.",
+        "stage_feedback": "Brand feedback received. Please revise and resubmit.",
+        "stage_approved": "Approved! Upload to your platform and check the caption.",
+        "stage_done": "All reviews completed!",
+        "resubmit_title": "Submit Revision",
     },
 }
 
@@ -490,23 +504,24 @@ st.markdown(
 # --- Helper: compute current workflow phase ---
 def _compute_phase(history: list[dict]) -> int:
     """Return phase 1-5 based on review history.
-    1=Upload, 2=AI Review done, 3=Admin checked, 4=Caption done, 5=All done
+    1=Need upload/re-upload, 3=Waiting brand, 4=Caption check, 5=Done
     """
     if not history:
         return 1
-    latest = history[0]  # newest first
+    latest = history[0]
+    score = latest.get("overall_score", 0)
     ad = latest.get("admin_decision")
     cap = latest.get("caption_check_result")
-    status = latest.get("overall_status", "")
+    bf = latest.get("brand_feedback")
     if cap and isinstance(cap, dict) and cap.get("all_passed"):
-        return 5  # all done
+        return 5
     if ad in ("approved", "auto_approved"):
-        return 4  # ready for caption
-    if ad:
-        return 3  # admin decided (revision/rejected)
-    if status:
-        return 2  # AI review done, waiting admin
-    return 1
+        return 4
+    if score < 80:
+        return 1  # auto-rejected, needs re-upload
+    if bf and ad == "revision_needed":
+        return 1  # brand feedback → re-upload
+    return 3  # waiting for brand
 
 
 def _render_step_indicator(phase: int):
@@ -539,6 +554,489 @@ def _render_step_indicator(phase: int):
         f'<div class="step-indicator">{"".join(parts)}</div>',
         unsafe_allow_html=True,
     )
+
+
+# --- Helper: render review results ---
+def _render_review_results(report: ReviewReport):
+    """Render review results (score, issues, tips, checklist)."""
+    import base64 as _b64
+    import re as _re
+
+    st.divider()
+    st.markdown(f"## {t('result_title')}")
+
+    score = report.overall_score
+    score_class = "score-high" if score >= 90 else ("score-mid" if score >= 60 else "score-low")
+
+    _display_status = report.overall_status
+    if score < 90 and _display_status == "approved":
+        _display_status = "revision_needed"
+
+    status_labels = {
+        "approved": t("status_approved"),
+        "revision_needed": t("status_revision"),
+        "rejected": t("status_rejected"),
+    }
+    status_label = status_labels.get(_display_status, "—")
+    status_icons = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}
+
+    st.markdown(
+        f'<div class="score-display {score_class}">{score}</div>'
+        f'<div class="score-label">{status_icons.get(_display_status, "")} {status_label}</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(f"**{t('summary')}:** {report.summary}")
+
+    # Issues (sorted by severity)
+    problem_scenes = sorted(
+        [sr for sr in report.scene_reviews if sr.status in ("fail", "warning")],
+        key=lambda s: (0 if s.status == "fail" else 1),
+    )
+    violated_rules = [r for r in report.rule_reviews if r.status == "violated"]
+
+    if problem_scenes or violated_rules:
+        n_fail = sum(1 for s in problem_scenes if s.status == "fail") + len(violated_rules)
+        n_warn = sum(1 for s in problem_scenes if s.status == "warning")
+        if n_fail > 0:
+            st.markdown(
+                f'<div class="result-card result-fail" style="text-align:center;">'
+                f'{t("priority_high")} <b>{n_fail}</b>건'
+                + (f'&nbsp;&nbsp;{t("priority_medium")} <b>{n_warn}</b>건' if n_warn else '')
+                + f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        st.markdown(f"### {t('issues_title')}")
+
+        for sr in problem_scenes:
+            icon = "❌" if sr.status == "fail" else "⚠️"
+            card_class = "result-fail" if sr.status == "fail" else "result-warn"
+            time_info = f" ({sr.matched_time_range})" if sr.matched_time_range else ""
+            suggestion_html = ""
+            if sr.suggestion:
+                suggestion_html = f"<br><strong>{t('fix_method')}:</strong> {sr.suggestion}"
+            st.markdown(
+                f'<div class="result-card {card_class}">'
+                f'<strong>{icon} Scene {sr.scene_number}{time_info}</strong><br>'
+                f'<span style="color:#6b7280;font-size:13px;">{t("guideline_label")}: {sr.guideline_description}</span><br>'
+                f'{sr.findings}'
+                f'{suggestion_html}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        for r in violated_rules:
+            st.markdown(
+                f'<div class="result-card result-fail">'
+                f'<strong>❌ [{r.rule_category}] {r.rule_description}</strong><br>'
+                f'{r.evidence}<br>'
+                f'<strong>{t("fix_method")}:</strong> {r.suggestion}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    # Passed items
+    passed_scenes = [sr for sr in report.scene_reviews if sr.status == "pass"]
+    if passed_scenes:
+        with st.expander(f"✅ {t('passed_title', n=len(passed_scenes))}", expanded=False):
+            for sr in passed_scenes:
+                st.markdown(f"- ✅ Scene {sr.scene_number}: {sr.findings[:100]}")
+
+    # Revision comparison
+    if report.revision_comparison:
+        st.markdown(f"### {t('revision_title', round=report.review_round)}")
+        fixed = [c for c in report.revision_comparison if c.status == "fixed"]
+        partial = [c for c in report.revision_comparison if c.status == "partially_fixed"]
+        pending = [c for c in report.revision_comparison if c.status == "still_pending"]
+        if fixed:
+            st.markdown(f"**✅ {t('fixed', n=len(fixed))}**")
+            for c in fixed:
+                st.markdown(f"- ~~{c.item}~~")
+        if partial:
+            st.markdown(f"**🟡 {t('partial', n=len(partial))}**")
+            for c in partial:
+                st.markdown(f"- {c.item}")
+        if pending:
+            st.markdown(f"**❌ {t('pending', n=len(pending))}**")
+            for c in pending:
+                st.markdown(f"- {c.item}")
+
+    # Editing Tips
+    if report.editing_tips:
+        st.markdown(f"### 🎨 {t('tips_title')}")
+        category_names = {
+            "font": t("cat_font"), "effect": t("cat_effect"),
+            "transition": t("cat_transition"), "layout": t("cat_layout"),
+            "sfx": t("cat_sfx"), "general": t("cat_general"),
+        }
+        scene_thumbs = {}
+        processed_video = st.session_state.get("creator_processed_video")
+        if processed_video and report.scene_reviews:
+            for sr in report.scene_reviews:
+                m = _re.search(r"([\d.]+)\s*[-~]\s*([\d.]+)", sr.matched_time_range or "")
+                if m:
+                    t_start = float(m.group(1))
+                    t_mid = (t_start + float(m.group(2))) / 2
+                else:
+                    t_mid = None
+                if t_mid is not None and processed_video.frames:
+                    best_frame = min(
+                        processed_video.frames,
+                        key=lambda f: abs(f.timestamp - t_mid),
+                    )
+                    scene_thumbs[sr.scene_number] = _b64.b64encode(
+                        best_frame.image_bytes
+                    ).decode("utf-8")
+
+        html = ['<div class="tips-wrap"><table class="tips-table">']
+        html.append(
+            "<thead><tr>"
+            f"<th>{t('tips_scene')}</th>"
+            f"<th>{t('tips_category')}</th>"
+            f"<th>{t('tips_tip')}</th>"
+            f"<th>{t('tips_font')}</th>"
+            f"<th>{t('tips_sfx')}</th>"
+            "</tr></thead><tbody>"
+        )
+        for tip in report.editing_tips:
+            cat = tip.category
+            tag_class = f"tag-{cat}" if cat in category_names else "tag-general"
+            cat_label = category_names.get(cat, cat)
+            scene_num = tip.scene_number
+            scene_label = f"Scene {scene_num}" if scene_num > 0 else t("scene_all")
+
+            td_thumb = '<td style="width:100px;text-align:center;">'
+            if scene_num in scene_thumbs:
+                td_thumb += (
+                    f'<img class="thumb" '
+                    f'src="data:image/jpeg;base64,{scene_thumbs[scene_num]}" />'
+                )
+            else:
+                td_thumb += '<div class="thumb-placeholder">—</div>'
+            td_thumb += f'<div class="tip-scene-label">{scene_label}</div>'
+            sr_match = next(
+                (sr for sr in report.scene_reviews if sr.scene_number == scene_num),
+                None,
+            )
+            if sr_match and sr_match.matched_time_range:
+                td_thumb += f'<div class="tip-scene-time">{sr_match.matched_time_range}</div>'
+            td_thumb += "</td>"
+
+            td_cat = f'<td><span class="tag-tip {tag_class}">{cat_label}</span></td>'
+
+            td_tip = "<td>"
+            tip_items = tip.tip if isinstance(tip.tip, list) else [tip.tip]
+            if tip_items:
+                td_tip += '<ul class="tip-list">'
+                for item in tip_items:
+                    td_tip += f"<li>{item}</li>"
+                td_tip += "</ul>"
+            if tip.capcut_how:
+                path_fmt = tip.capcut_how.replace(
+                    " > ", ' <span class="pa">›</span> '
+                ).replace(
+                    " → ", ' <span class="pa">›</span> '
+                )
+                td_tip += f'<div class="capcut-path-inline">{path_fmt}</div>'
+            td_tip += "</td>"
+
+            if tip.font_names:
+                td_font = "<td>" + " ".join(
+                    f'<span class="font-chip">{f}</span>' for f in tip.font_names
+                )
+                if tip.capcut_how and cat == "font":
+                    path_fmt = tip.capcut_how.replace(" > ", " › ").replace(" → ", " › ")
+                    td_font += f'<div class="capcut-path-inline">{path_fmt}</div>'
+                td_font += "</td>"
+            else:
+                td_font = '<td class="td-empty">—</td>'
+
+            if tip.sfx_names:
+                td_sfx = "<td>" + " ".join(
+                    f'<span class="sfx-badge">{s}</span>' for s in tip.sfx_names
+                ) + "</td>"
+            else:
+                td_sfx = '<td class="td-empty">—</td>'
+
+            html.append(f"<tr>{td_thumb}{td_cat}{td_tip}{td_font}{td_sfx}</tr>")
+        html.append("</tbody></table></div>")
+        st.markdown("".join(html), unsafe_allow_html=True)
+        st.markdown("")
+
+        tips_text = t("tips_dl_header") + "\n" + "=" * 40 + "\n\n"
+        for tip in report.editing_tips:
+            scene_label = f"Scene {tip.scene_number}" if tip.scene_number > 0 else t("scene_all")
+            tips_text += f"[{scene_label}] [{category_names.get(tip.category, tip.category)}]\n"
+            tip_items = tip.tip if isinstance(tip.tip, list) else [tip.tip]
+            for item in tip_items:
+                tips_text += f"  → {item}\n"
+            if tip.font_names:
+                tips_text += f"  Font: {', '.join(tip.font_names)}\n"
+            if tip.sfx_names:
+                tips_text += f"  SFX: {', '.join(tip.sfx_names)}\n"
+            if tip.capcut_how:
+                tips_text += f"  CapCut: {tip.capcut_how}\n"
+            tips_text += "\n"
+        st.download_button(
+            label=t("tips_dl"),
+            data=tips_text,
+            file_name="editing_tips.txt",
+            mime="text/plain",
+        )
+
+    # Revision checklist
+    if report.revision_items:
+        st.divider()
+        st.markdown(f"### {t('checklist_title')}")
+        for i, item in enumerate(report.revision_items, 1):
+            st.checkbox(item, key=f"creator_checklist_{i}")
+
+
+# --- Helper: render brand feedback ---
+def _render_brand_feedback(fb_reviews: list[dict]):
+    """Render brand feedback cards."""
+    st.markdown(f"### 💬 {t('brand_feedback_title')}")
+    st.caption(t("brand_feedback_desc"))
+    for fb_rev in fb_reviews:
+        fb_ts = fb_rev["created_at"][:16].replace("T", " ") if fb_rev.get("created_at") else ""
+        st.markdown(
+            f'<div class="result-card result-warn">'
+            f'<strong>{t("brand_feedback_round", round=fb_rev.get("round", 1))}</strong>'
+            f' <span style="color:#94a3b8;font-size:12px;">({fb_ts})</span><br>'
+            f'{fb_rev["brand_feedback"]}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+
+# --- Helper: render caption check ---
+def _render_caption_check(guideline_obj, history: list[dict]):
+    """Render caption check section for approved videos."""
+    st.divider()
+    st.markdown(f"### 🚀 {t('next_steps_title')}")
+    st.markdown(
+        f'<div class="result-card result-pass">'
+        f'<strong>1.</strong> {t("next_step_1")}<br>'
+        f'<strong>2.</strong> {t("next_step_2")}<br>'
+        f'<strong>3.</strong> {t("next_step_3")}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(f"### 🔍 {t('caption_check_title')}")
+    st.caption(t("caption_check_desc"))
+
+    caption_mode = st.radio(
+        t("caption_input_mode"),
+        [t("caption_input_url"), t("caption_input_paste")],
+        horizontal=True,
+        key="creator_caption_mode",
+    )
+
+    caption_url = ""
+    caption_text = ""
+
+    if caption_mode == t("caption_input_url"):
+        caption_url = st.text_input(
+            t("caption_input_url"),
+            placeholder=t("caption_url_placeholder"),
+            key="creator_caption_url",
+        )
+        st.caption(t("caption_url_help"))
+    else:
+        caption_text = st.text_area(
+            t("caption_input_paste"),
+            placeholder=t("caption_paste_placeholder"),
+            height=200,
+            key="creator_caption_text",
+        )
+
+    has_caption_input = bool(caption_url.strip()) or bool(caption_text.strip())
+    caption_btn = st.button(
+        t("caption_check_btn"),
+        disabled=not has_caption_input,
+        use_container_width=True,
+        key="creator_caption_btn",
+    )
+
+    if caption_btn and has_caption_input:
+        from analyzer.upload_checker import check_upload, fetch_post_content
+
+        post_content = caption_text.strip()
+
+        if caption_url.strip() and not post_content:
+            with st.spinner(t("caption_fetching")):
+                try:
+                    platform, fetched = fetch_post_content(caption_url.strip())
+                    post_content = fetched
+                    st.success(f"✅ {t('caption_fetched', platform=platform)}")
+                    with st.expander(t("caption_fetched_content"), expanded=False):
+                        st.text(post_content[:2000])
+                except ValueError as e:
+                    st.error(str(e))
+                    post_content = ""
+
+        if post_content:
+            with st.spinner(t("caption_checking")):
+                try:
+                    cap_result = check_upload(post_content, guideline_obj)
+                    st.session_state["creator_caption_result"] = cap_result
+                    if history:
+                        db.save_caption_check(history[0]["id"], cap_result)
+                except Exception as e:
+                    st.error(t("caption_check_error", e=e))
+
+    if "creator_caption_result" in st.session_state:
+        cap_result = st.session_state["creator_caption_result"]
+        all_ok = cap_result.get("all_passed", False)
+
+        if all_ok:
+            st.success(f"✅ {t('caption_all_pass')}")
+        else:
+            st.warning(f"⚠️ {t('caption_missing')}")
+
+        checks = cap_result.get("checks", [])
+        if checks:
+            for chk in checks:
+                status = chk.get("status", "")
+                element = chk.get("element", "")
+                detail = chk.get("detail", "")
+                if status == "found":
+                    st.markdown(f"- ✅ **{element}** — {detail}")
+                elif status == "missing":
+                    st.markdown(f"- ❌ **{element}** — {detail}")
+                else:
+                    st.markdown(f"- 🟡 **{element}** — {detail}")
+
+        lang = st.session_state.get("creator_lang", "ko")
+        summary_key = "summary_ko" if lang == "ko" else "summary_en"
+        summary = cap_result.get(summary_key, cap_result.get("summary_ko", ""))
+        if summary:
+            st.markdown("---")
+            st.markdown(f"**{t('caption_summary')}:** {summary}")
+
+
+# --- Helper: render upload form + review execution ---
+def _render_upload_form(campaign_id: str, c_name: str, guideline_obj):
+    """Show video upload form and handle review submission."""
+    st.markdown(
+        '<div class="step-card">'
+        '<span class="step-num">▲</span>'
+        f'<span class="step-title">{t("step3_title")}</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    upload_method = st.radio(
+        t("upload_method"),
+        [t("upload_gdrive"), t("upload_file")],
+        horizontal=True,
+        key="creator_upload_method",
+    )
+
+    gdrive_url = ""
+    video_files = None
+
+    if upload_method == t("upload_gdrive"):
+        gdrive_url = st.text_input(
+            t("upload_gdrive"),
+            placeholder=t("gdrive_placeholder"),
+            key="creator_gdrive_url",
+        )
+        st.caption(t("gdrive_help"))
+    else:
+        video_files = st.file_uploader(
+            t("video_file"),
+            type=["mp4", "mov", "avi", "mkv"],
+            accept_multiple_files=False,
+            key="creator_video_upload",
+            label_visibility="collapsed",
+        )
+
+    api_ok = bool(ANTHROPIC_API_KEY and OPENAI_API_KEY)
+    if not api_ok:
+        st.error(t("api_error"))
+
+    has_video = bool(gdrive_url.strip()) or bool(video_files)
+    if not has_video:
+        st.info(t("upload_video"))
+
+    review_btn = st.button(
+        t("start_review"),
+        disabled=not (has_video and api_ok),
+        use_container_width=True,
+        type="primary",
+        key="creator_review_btn",
+    )
+
+    if review_btn and has_video and api_ok:
+        from processors.video_processor import process_video
+        from analyzer.compliance_checker import run_compliance_check
+
+        previous_report = None
+        current_round = 1
+        prev = db.get_previous_review(campaign_id, c_name)
+        if prev:
+            previous_report, prev_round = prev
+            current_round = prev_round + 1
+            st.info(t("prev_found", round=current_round))
+
+        progress = st.progress(0, text=t("preparing"))
+
+        try:
+            if gdrive_url.strip() and not video_files:
+                from utils.gdrive_video import download_gdrive_video, is_gdrive_url
+
+                if not is_gdrive_url(gdrive_url.strip()):
+                    st.error(t("invalid_gdrive"))
+                    st.stop()
+
+                progress.progress(5, text=t("downloading"))
+
+                def dl_progress(dl_mb, total_mb):
+                    if total_mb:
+                        pct = min(int((dl_mb / total_mb) * 20) + 5, 25)
+                        progress.progress(pct, text=t("dl_progress", dl=dl_mb, total=total_mb))
+                    else:
+                        progress.progress(15, text=t("dl_progress_nosize", dl=dl_mb))
+
+                filename, tmp_path = download_gdrive_video(gdrive_url.strip(), dl_progress)
+                video_bytes = tmp_path.read_bytes()
+                tmp_path.unlink(missing_ok=True)
+                st.success(t("dl_done", name=filename, size=len(video_bytes) // (1024 * 1024)))
+            else:
+                filename = str(video_files.name)
+                video_bytes = video_files.read()
+
+            progress.progress(25, text=t("analyzing"))
+            processed_video = process_video(video_bytes, str(filename))
+
+            def update_progress(step, total, msg):
+                pct = 30 + int((step / total) * 65)
+                progress.progress(min(pct, 95), text=msg)
+
+            report = run_compliance_check(
+                guideline=guideline_obj,
+                guideline_images=[],
+                video=processed_video,
+                progress_callback=update_progress,
+                previous_report=previous_report,
+                review_round=current_round,
+            )
+
+            db.save_review(campaign_id, c_name, report, current_round)
+            progress.progress(100, text=t("done"))
+
+            # Rerun to show updated stage
+            st.session_state["_creator_review_done"] = True
+            st.rerun()
+
+        except Exception as e:
+            progress.empty()
+            st.error(t("error", e=e))
+            import traceback
+            st.code(traceback.format_exc())
 
 
 # --- Read URL params (for pre-filled links) ---
@@ -621,603 +1119,131 @@ else:
         label_visibility="collapsed",
     )
 
-# --- Step 3: Video Upload ---
-st.markdown(
-    '<div class="step-card">'
-    '<span class="step-num">3</span>'
-    f'<span class="step-title">{t("step3_title")}</span>'
-    '</div>',
-    unsafe_allow_html=True,
-)
-
-upload_method = st.radio(
-    t("upload_method"),
-    [t("upload_gdrive"), t("upload_file")],
-    horizontal=True,
-    key="creator_upload_method",
-)
-
-gdrive_url = ""
-video_files = None
-
-if upload_method == t("upload_gdrive"):
-    gdrive_url = st.text_input(
-        t("upload_gdrive"),
-        placeholder=t("gdrive_placeholder"),
-        key="creator_gdrive_url",
-    )
-    st.caption(t("gdrive_help"))
-else:
-    video_files = st.file_uploader(
-        t("video_file"),
-        type=["mp4", "mov", "avi", "mkv"],
-        accept_multiple_files=False,
-        key="creator_video_upload",
-        label_visibility="collapsed",
-    )
-
-# --- API Check ---
-api_ok = bool(ANTHROPIC_API_KEY and OPENAI_API_KEY)
-if not api_ok:
-    st.error(t("api_error"))
-
-# --- Start Review ---
-has_video = bool(gdrive_url.strip()) or bool(video_files)
-has_name = bool(creator_name.strip())
+# --- Stage-Based Flow ---
+has_name = bool(creator_name.strip()) if isinstance(creator_name, str) else False
 
 if not has_name:
     st.info(t("enter_name"))
-elif not has_video:
-    st.info(t("upload_video"))
+    st.stop()
 
-# --- Review History + Step Indicator ---
-_history = []
-if has_name:
-    _campaign_id = guideline.title or guideline.product_name or "default"
-    _history = db.get_creator_reviews(_campaign_id, creator_name.strip())
+c_name = creator_name.strip()
+campaign_id = guideline.title or guideline.product_name or "default"
+_history = db.get_creator_reviews(campaign_id, c_name)
 
-    # Step indicator
-    current_phase = _compute_phase(_history)
-    _render_step_indicator(current_phase)
+# Step indicator
+current_phase = _compute_phase(_history)
+_render_step_indicator(current_phase)
 
-    # New feedback alert
-    _fb_reviews = [r for r in _history if r.get("brand_feedback")]
-    if _fb_reviews:
-        st.markdown(f'<div class="feedback-alert">{t("new_feedback_alert")}</div>', unsafe_allow_html=True)
+# Review just completed notification
+if st.session_state.pop("_creator_review_done", False):
+    st.success(t("done"))
 
-    # Admin decision alert (latest)
-    if _history:
-        _latest_ad = _history[0].get("admin_decision")
-        _ad_labels = {
-            "approved": ("admin_approved", "admin-badge-approved"),
-            "auto_approved": ("admin_auto_approved", "admin-badge-auto"),
-            "revision_needed": ("admin_revision", "admin-badge-revision"),
-            "rejected": ("admin_rejected", "admin-badge-rejected"),
-        }
-        if _latest_ad and _latest_ad in _ad_labels:
-            _lbl_key, _badge_cls = _ad_labels[_latest_ad]
-            st.markdown(
-                f'<div class="admin-badge {_badge_cls}">{t(_lbl_key)}</div>',
-                unsafe_allow_html=True,
-            )
-            if _history[0].get("admin_memo"):
-                st.caption(f"{t('admin_memo_label')}: {_history[0]['admin_memo']}")
-
-    if _history:
-        with st.expander(f"📋 {t('history_title')} ({len(_history)})", expanded=False):
-            status_map = {
-                "approved": t("status_map_approved"),
-                "revision_needed": t("status_map_revision"),
-                "rejected": t("status_map_rejected"),
-            }
-            _ad_map = {
-                "approved": "✅",
-                "auto_approved": "🤖",
-                "revision_needed": "📝",
-                "rejected": "❌",
-            }
-            for row in _history:
-                sc = row.get("overall_score", 0)
-                score_color = "#22c55e" if sc >= 80 else ("#f59e0b" if sc >= 60 else "#ef4444")
-                st_label = status_map.get(row.get("overall_status", ""), t("status_map_pending"))
-                ts = row["created_at"][:16].replace("T", " ") if row.get("created_at") else ""
-                ad_icon = _ad_map.get(row.get("admin_decision", ""), "")
-                fb_icon = "💬" if row.get("brand_feedback") else ""
-                cap_icon = ""
-                _cap = row.get("caption_check_result")
-                if _cap and isinstance(_cap, dict):
-                    cap_icon = "🔗✅" if _cap.get("all_passed") else "🔗❌"
-                st.markdown(
-                    f'<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;'
-                    f'border-bottom:1px solid #f0f0f0;">'
-                    f'<span style="font-weight:700;min-width:70px;">'
-                    f'{t("history_round", round=row.get("round", 1))}</span>'
-                    f'<span style="color:{score_color};font-weight:800;font-size:18px;min-width:40px;">'
-                    f'{sc}</span>'
-                    f'<span style="min-width:80px;">{st_label}</span>'
-                    f'<span style="font-size:14px;">{ad_icon} {fb_icon} {cap_icon}</span>'
-                    f'<span style="color:#94a3b8;font-size:12px;">{ts}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-review_btn = st.button(
-    t("start_review"),
-    disabled=not (has_video and has_name and api_ok),
-    use_container_width=True,
-    type="primary",
-    key="creator_review_btn",
-)
-
-if review_btn and has_video and has_name and api_ok:
-    from processors.video_processor import process_video
-    from analyzer.compliance_checker import run_compliance_check
-
-    campaign_id = guideline.title or guideline.product_name or "default"
-    c_name = creator_name.strip()
-
-    # Get previous review for comparison
-    previous_report = None
-    current_round = 1
-    prev = db.get_previous_review(campaign_id, c_name)
-    if prev:
-        previous_report, prev_round = prev
-        current_round = prev_round + 1
-        st.info(t("prev_found", round=current_round))
-
-    progress = st.progress(0, text=t("preparing"))
-
-    try:
-        # --- Download from Google Drive if needed ---
-        if gdrive_url.strip() and not video_files:
-            from utils.gdrive_video import download_gdrive_video, is_gdrive_url
-
-            if not is_gdrive_url(gdrive_url.strip()):
-                st.error(t("invalid_gdrive"))
-                st.stop()
-
-            progress.progress(5, text=t("downloading"))
-
-            def dl_progress(dl_mb, total_mb):
-                if total_mb:
-                    pct = min(int((dl_mb / total_mb) * 20) + 5, 25)
-                    progress.progress(pct, text=t("dl_progress", dl=dl_mb, total=total_mb))
-                else:
-                    progress.progress(15, text=t("dl_progress_nosize", dl=dl_mb))
-
-            filename, tmp_path = download_gdrive_video(gdrive_url.strip(), dl_progress)
-            video_bytes = tmp_path.read_bytes()
-            tmp_path.unlink(missing_ok=True)
-            st.success(t("dl_done", name=filename, size=len(video_bytes) // (1024*1024)))
-        else:
-            filename = str(video_files.name)
-            video_bytes = video_files.read()
-
-        # --- Process video ---
-        progress.progress(25, text=t("analyzing"))
-        processed_video = process_video(video_bytes, str(filename))
-
-        # --- Run compliance check ---
-        guideline_images = []  # Creator page doesn't have guideline images in session
-
-        def update_progress(step, total, msg):
-            pct = 30 + int((step / total) * 65)
-            progress.progress(min(pct, 95), text=msg)
-
-        report = run_compliance_check(
-            guideline=guideline,
-            guideline_images=guideline_images,
-            video=processed_video,
-            progress_callback=update_progress,
-            previous_report=previous_report,
-            review_round=current_round,
-        )
-
-        # Save review history
-        db.save_review(campaign_id, c_name, report, current_round)
-
-        progress.progress(100, text=t("done"))
-        st.session_state["creator_report"] = report
-        st.session_state["creator_processed_video"] = processed_video
-
-    except Exception as e:
-        progress.empty()
-        st.error(t("error", e=e))
-        import traceback
-        st.code(traceback.format_exc())
-
-# --- Display Results ---
-if "creator_report" in st.session_state:
-    import base64 as _b64
-    import re as _re
-
-    report: ReviewReport = st.session_state["creator_report"]
-
-    st.divider()
-    st.markdown(f"## {t('result_title')}")
-
-    # Score display
-    score = report.overall_score
-    score_class = "score-high" if score >= 90 else ("score-mid" if score >= 60 else "score-low")
-
-    # 90점 미만이면 AI가 approved라 해도 revision_needed로 강제
-    _display_status = report.overall_status
-    if score < 90 and _display_status == "approved":
-        _display_status = "revision_needed"
-
-    status_labels = {
-        "approved": t("status_approved"),
-        "revision_needed": t("status_revision"),
-        "rejected": t("status_rejected"),
+# Show review history expander + admin decision badge
+if _history:
+    _latest_ad = _history[0].get("admin_decision")
+    _ad_labels = {
+        "approved": ("admin_approved", "admin-badge-approved"),
+        "auto_approved": ("admin_auto_approved", "admin-badge-auto"),
+        "revision_needed": ("admin_revision", "admin-badge-revision"),
+        "rejected": ("admin_rejected", "admin-badge-rejected"),
     }
-    status_label = status_labels.get(_display_status, "—")
-    status_icons = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}
-
-    st.markdown(
-        f'<div class="score-display {score_class}">{score}</div>'
-        f'<div class="score-label">{status_icons.get(_display_status, "")} {status_label}</div>',
-        unsafe_allow_html=True,
-    )
-
-    # Summary
-    st.markdown(f"**{t('summary')}:** {report.summary}")
-
-    # --- Issues (sorted by severity: fail first, then warning) ---
-    problem_scenes = sorted(
-        [sr for sr in report.scene_reviews if sr.status in ("fail", "warning")],
-        key=lambda s: (0 if s.status == "fail" else 1),
-    )
-    violated_rules = [r for r in report.rule_reviews if r.status == "violated"]
-
-    if problem_scenes or violated_rules:
-        # Priority summary card
-        n_fail = sum(1 for s in problem_scenes if s.status == "fail") + len(violated_rules)
-        n_warn = sum(1 for s in problem_scenes if s.status == "warning")
-        if n_fail > 0:
-            st.markdown(
-                f'<div class="result-card result-fail" style="text-align:center;">'
-                f'{t("priority_high")} <b>{n_fail}</b>건'
-                + (f'&nbsp;&nbsp;{t("priority_medium")} <b>{n_warn}</b>건' if n_warn else '')
-                + f'</div>',
-                unsafe_allow_html=True,
-            )
-
-        st.markdown(f"### {t('issues_title')}")
-
-        for sr in problem_scenes:
-            icon = "❌" if sr.status == "fail" else "⚠️"
-            card_class = "result-fail" if sr.status == "fail" else "result-warn"
-            time_info = f" ({sr.matched_time_range})" if sr.matched_time_range else ""
-
-            suggestion_html = ""
-            if sr.suggestion:
-                suggestion_html = f"<br><strong>{t('fix_method')}:</strong> {sr.suggestion}"
-
-            st.markdown(
-                f'<div class="result-card {card_class}">'
-                f'<strong>{icon} Scene {sr.scene_number}{time_info}</strong><br>'
-                f'<span style="color:#6b7280;font-size:13px;">{t("guideline_label")}: {sr.guideline_description}</span><br>'
-                f'{sr.findings}'
-                f'{suggestion_html}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-        for r in violated_rules:
-            st.markdown(
-                f'<div class="result-card result-fail">'
-                f'<strong>❌ [{r.rule_category}] {r.rule_description}</strong><br>'
-                f'{r.evidence}<br>'
-                f'<strong>{t("fix_method")}:</strong> {r.suggestion}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-    # --- Passed items ---
-    passed_scenes = [sr for sr in report.scene_reviews if sr.status == "pass"]
-    if passed_scenes:
-        with st.expander(f"✅ {t('passed_title', n=len(passed_scenes))}", expanded=False):
-            for sr in passed_scenes:
-                st.markdown(f"- ✅ Scene {sr.scene_number}: {sr.findings[:100]}")
-
-    # --- Revision comparison (for re-reviews) ---
-    if report.revision_comparison:
-        st.markdown(f"### {t('revision_title', round=report.review_round)}")
-
-        fixed = [c for c in report.revision_comparison if c.status == "fixed"]
-        partial = [c for c in report.revision_comparison if c.status == "partially_fixed"]
-        pending = [c for c in report.revision_comparison if c.status == "still_pending"]
-
-        if fixed:
-            st.markdown(f"**✅ {t('fixed', n=len(fixed))}**")
-            for c in fixed:
-                st.markdown(f"- ~~{c.item}~~")
-
-        if partial:
-            st.markdown(f"**🟡 {t('partial', n=len(partial))}**")
-            for c in partial:
-                st.markdown(f"- {c.item}")
-
-        if pending:
-            st.markdown(f"**❌ {t('pending', n=len(pending))}**")
-            for c in pending:
-                st.markdown(f"- {c.item}")
-
-    # --- Editing Tips (rich table, matching admin) ---
-    if report.editing_tips:
-        st.markdown(f"### 🎨 {t('tips_title')}")
-
-        category_names = {
-            "font": t("cat_font"),
-            "effect": t("cat_effect"),
-            "transition": t("cat_transition"),
-            "layout": t("cat_layout"),
-            "sfx": t("cat_sfx"),
-            "general": t("cat_general"),
-        }
-
-        # Build scene→thumbnail mapping from video frames
-        scene_thumbs = {}
-        processed_video = st.session_state.get("creator_processed_video")
-        if processed_video and report.scene_reviews:
-            for sr in report.scene_reviews:
-                m = _re.search(r"([\d.]+)\s*[-~]\s*([\d.]+)", sr.matched_time_range or "")
-                if m:
-                    t_start = float(m.group(1))
-                    t_mid = (t_start + float(m.group(2))) / 2
-                else:
-                    t_mid = None
-
-                if t_mid is not None and processed_video.frames:
-                    best_frame = min(
-                        processed_video.frames,
-                        key=lambda f: abs(f.timestamp - t_mid),
-                    )
-                    scene_thumbs[sr.scene_number] = _b64.b64encode(
-                        best_frame.image_bytes
-                    ).decode("utf-8")
-
-        # Build table HTML
-        html = ['<div class="tips-wrap"><table class="tips-table">']
-        html.append(
-            "<thead><tr>"
-            f"<th>{t('tips_scene')}</th>"
-            f"<th>{t('tips_category')}</th>"
-            f"<th>{t('tips_tip')}</th>"
-            f"<th>{t('tips_font')}</th>"
-            f"<th>{t('tips_sfx')}</th>"
-            "</tr></thead><tbody>"
-        )
-
-        for tip in report.editing_tips:
-            cat = tip.category
-            tag_class = f"tag-{cat}" if cat in category_names else "tag-general"
-            cat_label = category_names.get(cat, cat)
-            scene_num = tip.scene_number
-            scene_label = f"Scene {scene_num}" if scene_num > 0 else t("scene_all")
-
-            td_thumb = '<td style="width:100px;text-align:center;">'
-            if scene_num in scene_thumbs:
-                td_thumb += (
-                    f'<img class="thumb" '
-                    f'src="data:image/jpeg;base64,{scene_thumbs[scene_num]}" />'
-                )
-            else:
-                td_thumb += '<div class="thumb-placeholder">—</div>'
-            td_thumb += f'<div class="tip-scene-label">{scene_label}</div>'
-            sr_match = next(
-                (sr for sr in report.scene_reviews if sr.scene_number == scene_num),
-                None,
-            )
-            if sr_match and sr_match.matched_time_range:
-                td_thumb += f'<div class="tip-scene-time">{sr_match.matched_time_range}</div>'
-            td_thumb += "</td>"
-
-            td_cat = (
-                f'<td><span class="tag-tip {tag_class}">{cat_label}</span></td>'
-            )
-
-            td_tip = "<td>"
-            tip_items = tip.tip if isinstance(tip.tip, list) else [tip.tip]
-            if tip_items:
-                td_tip += '<ul class="tip-list">'
-                for item in tip_items:
-                    td_tip += f"<li>{item}</li>"
-                td_tip += "</ul>"
-            if tip.capcut_how:
-                path_fmt = tip.capcut_how.replace(
-                    " > ", ' <span class="pa">›</span> '
-                ).replace(
-                    " → ", ' <span class="pa">›</span> '
-                )
-                td_tip += f'<div class="capcut-path-inline">{path_fmt}</div>'
-            td_tip += "</td>"
-
-            if tip.font_names:
-                td_font = "<td>" + " ".join(
-                    f'<span class="font-chip">{f}</span>' for f in tip.font_names
-                )
-                if tip.capcut_how and cat == "font":
-                    path_fmt = tip.capcut_how.replace(" > ", " › ").replace(" → ", " › ")
-                    td_font += f'<div class="capcut-path-inline">{path_fmt}</div>'
-                td_font += "</td>"
-            else:
-                td_font = '<td class="td-empty">—</td>'
-
-            if tip.sfx_names:
-                td_sfx = "<td>" + " ".join(
-                    f'<span class="sfx-badge">{s}</span>' for s in tip.sfx_names
-                ) + "</td>"
-            else:
-                td_sfx = '<td class="td-empty">—</td>'
-
-            html.append(
-                f"<tr>{td_thumb}{td_cat}{td_tip}{td_font}{td_sfx}</tr>"
-            )
-
-        html.append("</tbody></table></div>")
-
-        st.markdown("".join(html), unsafe_allow_html=True)
-
-        st.markdown("")
-
-        # Download as text
-        tips_text = t("tips_dl_header") + "\n" + "=" * 40 + "\n\n"
-        for tip in report.editing_tips:
-            scene_label = f"Scene {tip.scene_number}" if tip.scene_number > 0 else t("scene_all")
-            tips_text += f"[{scene_label}] [{category_names.get(tip.category, tip.category)}]\n"
-            tip_items = tip.tip if isinstance(tip.tip, list) else [tip.tip]
-            for item in tip_items:
-                tips_text += f"  → {item}\n"
-            if tip.font_names:
-                tips_text += f"  Font: {', '.join(tip.font_names)}\n"
-            if tip.sfx_names:
-                tips_text += f"  SFX: {', '.join(tip.sfx_names)}\n"
-            if tip.capcut_how:
-                tips_text += f"  CapCut: {tip.capcut_how}\n"
-            tips_text += "\n"
-
-        st.download_button(
-            label=t("tips_dl"),
-            data=tips_text,
-            file_name="editing_tips.txt",
-            mime="text/plain",
-        )
-
-    # --- Revision items summary ---
-    if report.revision_items:
-        st.divider()
-        st.markdown(f"### {t('checklist_title')}")
-        for i, item in enumerate(report.revision_items, 1):
-            st.checkbox(item, key=f"creator_checklist_{i}")
-
-    # --- Brand Feedback (shown after results, not before upload) ---
-    if has_name and _fb_reviews:
-        st.divider()
-        st.markdown(f"### 💬 {t('brand_feedback_title')}")
-        st.caption(t("brand_feedback_desc"))
-        for fb_rev in _fb_reviews:
-            fb_ts = fb_rev["created_at"][:16].replace("T", " ") if fb_rev.get("created_at") else ""
-            st.markdown(
-                f'<div class="result-card result-warn">'
-                f'<strong>{t("brand_feedback_round", round=fb_rev.get("round", 1))}</strong>'
-                f' <span style="color:#94a3b8;font-size:12px;">({fb_ts})</span><br>'
-                f'{fb_rev["brand_feedback"]}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-    # --- Next Steps (for approved videos — 90+ AI approved or admin approved) ---
-    _is_approved = (
-        (report.overall_score >= 90 and report.overall_status == "approved")
-        or (has_name and _history and _history[0].get("admin_decision") in ("approved", "auto_approved"))
-    )
-    if _is_approved:
-        st.divider()
-        st.markdown(f"### 🚀 {t('next_steps_title')}")
+    if _latest_ad and _latest_ad in _ad_labels:
+        _lbl_key, _badge_cls = _ad_labels[_latest_ad]
         st.markdown(
-            f'<div class="result-card result-pass">'
-            f'<strong>1.</strong> {t("next_step_1")}<br>'
-            f'<strong>2.</strong> {t("next_step_2")}<br>'
-            f'<strong>3.</strong> {t("next_step_3")}'
-            f'</div>',
+            f'<div class="admin-badge {_badge_cls}">{t(_lbl_key)}</div>',
             unsafe_allow_html=True,
         )
+        if _history[0].get("admin_memo"):
+            st.caption(f"{t('admin_memo_label')}: {_history[0]['admin_memo']}")
 
-        # --- Caption Self-Check ---
-        st.markdown(f"### 🔍 {t('caption_check_title')}")
-        st.caption(t("caption_check_desc"))
-
-        caption_mode = st.radio(
-            t("caption_input_mode"),
-            [t("caption_input_url"), t("caption_input_paste")],
-            horizontal=True,
-            key="creator_caption_mode",
-        )
-
-        caption_url = ""
-        caption_text = ""
-
-        if caption_mode == t("caption_input_url"):
-            caption_url = st.text_input(
-                t("caption_input_url"),
-                placeholder=t("caption_url_placeholder"),
-                key="creator_caption_url",
+    with st.expander(f"📋 {t('history_title')} ({len(_history)})", expanded=False):
+        status_map = {
+            "approved": t("status_map_approved"),
+            "revision_needed": t("status_map_revision"),
+            "rejected": t("status_map_rejected"),
+        }
+        _ad_map = {
+            "approved": "✅", "auto_approved": "🤖",
+            "revision_needed": "📝", "rejected": "❌",
+        }
+        for row in _history:
+            sc = row.get("overall_score", 0)
+            score_color = "#22c55e" if sc >= 80 else ("#f59e0b" if sc >= 60 else "#ef4444")
+            st_label = status_map.get(row.get("overall_status", ""), t("status_map_pending"))
+            ts = row["created_at"][:16].replace("T", " ") if row.get("created_at") else ""
+            ad_icon = _ad_map.get(row.get("admin_decision", ""), "")
+            fb_icon = "💬" if row.get("brand_feedback") else ""
+            cap_icon = ""
+            _cap = row.get("caption_check_result")
+            if _cap and isinstance(_cap, dict):
+                cap_icon = "🔗✅" if _cap.get("all_passed") else "🔗❌"
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;'
+                f'border-bottom:1px solid #f0f0f0;">'
+                f'<span style="font-weight:700;min-width:70px;">'
+                f'{t("history_round", round=row.get("round", 1))}</span>'
+                f'<span style="color:{score_color};font-weight:800;font-size:18px;min-width:40px;">'
+                f'{sc}</span>'
+                f'<span style="min-width:80px;">{st_label}</span>'
+                f'<span style="font-size:14px;">{ad_icon} {fb_icon} {cap_icon}</span>'
+                f'<span style="color:#94a3b8;font-size:12px;">{ts}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
             )
-            st.caption(t("caption_url_help"))
+
+# --- Determine stage and render appropriate content ---
+if not _history:
+    # NO REVIEW — show upload form
+    st.info(t("stage_no_review"))
+    _render_upload_form(campaign_id, c_name, guideline)
+
+else:
+    latest = _history[0]
+    score = latest.get("overall_score", 0)
+    ad = latest.get("admin_decision")
+    bf = latest.get("brand_feedback")
+    cap = latest.get("caption_check_result")
+
+    # Load latest report from DB
+    latest_report = ReviewReport.model_validate(latest["report_json"])
+
+    if score < 80:
+        # AUTO-REJECT: guideline not met, creator must fix
+        st.warning(t("stage_under_80"))
+        _render_review_results(latest_report)
+        st.divider()
+        st.markdown(f"### {t('resubmit_title')}")
+        _render_upload_form(campaign_id, c_name, guideline)
+
+    elif ad in ("approved", "auto_approved"):
+        if cap and isinstance(cap, dict) and cap.get("all_passed"):
+            # ALL DONE
+            st.success(t("stage_done"))
+            _render_review_results(latest_report)
         else:
-            caption_text = st.text_area(
-                t("caption_input_paste"),
-                placeholder=t("caption_paste_placeholder"),
-                height=200,
-                key="creator_caption_text",
-            )
+            # APPROVED — caption check
+            st.success(t("stage_approved"))
+            _render_review_results(latest_report)
+            _render_caption_check(guideline, _history)
 
-        has_caption_input = bool(caption_url.strip()) or bool(caption_text.strip())
-        caption_btn = st.button(
-            t("caption_check_btn"),
-            disabled=not has_caption_input,
-            use_container_width=True,
-            key="creator_caption_btn",
+    elif bf and ad == "revision_needed":
+        # BRAND FEEDBACK — revision needed
+        st.markdown(
+            f'<div class="feedback-alert">{t("stage_feedback")}</div>',
+            unsafe_allow_html=True,
         )
+        _fb_reviews = [r for r in _history if r.get("brand_feedback")]
+        _render_brand_feedback(_fb_reviews)
+        st.divider()
+        _render_review_results(latest_report)
+        st.divider()
+        st.markdown(f"### {t('resubmit_title')}")
+        _render_upload_form(campaign_id, c_name, guideline)
 
-        if caption_btn and has_caption_input:
-            from analyzer.upload_checker import check_upload, fetch_post_content
+    else:
+        # WAITING — AI review done, waiting for brand feedback
+        st.info(t("stage_waiting"))
+        _render_review_results(latest_report)
 
-            post_content = caption_text.strip()
-
-            # Fetch content from URL if needed
-            if caption_url.strip() and not post_content:
-                with st.spinner(t("caption_fetching")):
-                    try:
-                        platform, fetched = fetch_post_content(caption_url.strip())
-                        post_content = fetched
-                        st.success(f"✅ {t('caption_fetched', platform=platform)}")
-                        with st.expander(t("caption_fetched_content"), expanded=False):
-                            st.text(post_content[:2000])
-                    except ValueError as e:
-                        st.error(str(e))
-                        post_content = ""
-
-            if post_content:
-                with st.spinner(t("caption_checking")):
-                    try:
-                        cap_result = check_upload(post_content, guideline)
-                        st.session_state["creator_caption_result"] = cap_result
-                        # Save to DB
-                        if has_name and _history:
-                            db.save_caption_check(_history[0]["id"], cap_result)
-                    except Exception as e:
-                        st.error(t("caption_check_error", e=e))
-
-        if "creator_caption_result" in st.session_state:
-            cap_result = st.session_state["creator_caption_result"]
-            all_ok = cap_result.get("all_passed", False)
-
-            if all_ok:
-                st.success(f"✅ {t('caption_all_pass')}")
-            else:
-                st.warning(f"⚠️ {t('caption_missing')}")
-
-            checks = cap_result.get("checks", [])
-            if checks:
-                for chk in checks:
-                    status = chk.get("status", "")
-                    element = chk.get("element", "")
-                    detail = chk.get("detail", "")
-                    if status == "found":
-                        st.markdown(f"- ✅ **{element}** — {detail}")
-                    elif status == "missing":
-                        st.markdown(f"- ❌ **{element}** — {detail}")
-                    else:
-                        st.markdown(f"- 🟡 **{element}** — {detail}")
-
-            lang = st.session_state.get("creator_lang", "ko")
-            summary_key = "summary_ko" if lang == "ko" else "summary_en"
-            summary = cap_result.get(summary_key, cap_result.get("summary_ko", ""))
-            if summary:
-                st.markdown("---")
-                st.markdown(f"**{t('caption_summary')}:** {summary}")
-
-    st.divider()
-    st.caption(t("contact"))
+st.divider()
+st.caption(t("contact"))

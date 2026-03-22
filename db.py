@@ -122,6 +122,9 @@ def save_review(
     # 90+ with no manual flags → auto-approve
     if report.overall_score >= 90 and not report.manual_review_flags:
         data["admin_decision"] = "auto_approved"
+    # < 80 → auto-reject (creator must fix before brand sees)
+    elif report.overall_score < 80:
+        data["admin_decision"] = "revision_needed"
     result = sb.table("vc_reviews").insert(data).execute()
     return result.data[0]["id"]
 

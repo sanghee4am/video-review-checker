@@ -393,6 +393,9 @@ with st.sidebar:
             _gdrive_url = gdrive_video_url.strip()
             # 파일명에서 추출은 다운로드 후에만 가능하므로, URL에서 힌트가 없으면 수동 입력
             st.caption("💡 파일명이 `틱톡핸들_아무이름.mp4` 형식이면 자동으로 이름이 채워집니다.")
+        _prefill = st.session_state.pop("_prefill_creator_name", None)
+        if _prefill is not None:
+            st.session_state["creator_name"] = _prefill
         creator_name = st.text_input(
             "크리에이터 이름/채널명",
             placeholder="예: @creator_name (드라이브 링크면 자동 추출됨)",
@@ -611,7 +614,6 @@ with tab1:
                 with col_btn:
                     if st.button("상세", key=f"detail_{idx}"):
                         st.session_state["view_creator_detail"] = sub.get("creator_name", "알 수 없음")
-                        st.session_state["creator_name"] = sub.get("creator_name", "알 수 없음")
 
             # Show detailed review history for selected creator
             if "view_creator_detail" in st.session_state:
@@ -780,7 +782,7 @@ with tab1:
                             use_container_width=True,
                             type="primary",
                         ):
-                            st.session_state["creator_name"] = detail_creator
+                            st.session_state["_prefill_creator_name"] = detail_creator
                             st.toast(f"사이드바에 '{detail_creator}' 이름이 설정되었습니다. 영상을 업로드하고 검수를 시작하세요.")
                             st.rerun()
 
@@ -1123,7 +1125,7 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
                 _handle = _stem.split("_")[0]       # 첫 번째 _ 앞이 핸들
                 if _handle:
                     c_name = _handle
-                    st.session_state["creator_name"] = c_name
+                    st.session_state["_prefill_creator_name"] = c_name
                     st.info(f"📎 파일명에서 크리에이터 자동 추출: **{c_name}**")
         else:
             for vf in video_files:
