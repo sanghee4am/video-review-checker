@@ -64,10 +64,11 @@ def _download_via_api(file_id: str, tmp_path: Path) -> str | None:
         raise RuntimeError("Drive 서비스 계정 인증 실패 (GOOGLE_SERVICE_ACCOUNT 시크릿 확인)")
 
     file_info = service.files().get(
-        fileId=file_id, fields="name"
+        fileId=file_id, fields="name",
+        supportsAllDrives=True,
     ).execute()
 
-    request = service.files().get_media(fileId=file_id)
+    request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
     with open(tmp_path, "wb") as f:
         downloader = MediaIoBaseDownload(f, request)
         done = False
