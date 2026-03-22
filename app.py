@@ -483,6 +483,8 @@ with st.sidebar:
 
 # --- Main Area ---
 _top_status = st.container()  # 검수 진행 상태를 최상단에 표시
+if st.session_state.pop("_review_just_completed", False):
+    _top_status.success("검수가 완료되었습니다! '가이드라인' 탭에서 크리에이터 현황을 확인하세요.")
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📋 가이드라인", "🔍 검수 결과", "🎨 편집 팁",
     "📊 브랜드사 전달", "🔗 업로드 확인",
@@ -1196,8 +1198,8 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
             _try_sheet_and_slack(campaign_id, c_name, last_report)
 
         progress_bar.progress(100, text=f"검수 완료! ({num_videos}개 영상)")
-        round_msg = f" (Round {current_round})" if current_round > 1 else ""
-        st.success(f"검수가 완료되었습니다!{round_msg} {num_videos}개 영상의 결과를 '검수 결과' 탭에서 확인하세요.")
+        st.session_state["_review_just_completed"] = True
+        st.rerun()
 
     except Exception as e:
         progress_bar.empty()
