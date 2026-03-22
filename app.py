@@ -386,9 +386,16 @@ with st.sidebar:
             st.caption("파일이 '링크가 있는 모든 사람'으로 공유되어 있어야 합니다.")
 
         st.subheader("3. 크리에이터 정보")
+        # 드라이브 링크에서 틱톡핸들 자동 추출 (파일명: 틱톡핸들_아무거나.mp4)
+        _auto_creator = ""
+        if gdrive_video_url.strip():
+            import re as _re_creator
+            _gdrive_url = gdrive_video_url.strip()
+            # 파일명에서 추출은 다운로드 후에만 가능하므로, URL에서 힌트가 없으면 수동 입력
+            st.caption("💡 파일명이 `틱톡핸들_아무이름.mp4` 형식이면 자동으로 이름이 채워집니다.")
         creator_name = st.text_input(
             "크리에이터 이름/채널명",
-            placeholder="예: @creator_name",
+            placeholder="예: @creator_name (드라이브 링크면 자동 추출됨)",
             key="creator_name",
         )
         st.caption("이전 검수 이력과 비교하려면 동일한 이름을 사용하세요.")
@@ -458,18 +465,21 @@ with st.sidebar:
         )
         has_video_input = bool(video_files) or bool(gdrive_video_url.strip())
         has_creator_name = bool(st.session_state.get("creator_name", "").strip())
+        _is_gdrive = bool(gdrive_video_url.strip()) if 'gdrive_video_url' in dir() else False
         review_btn = st.button(
             "🔍 검수 시작",
             disabled=not (
                 has_video_input
-                and has_creator_name
+                and (has_creator_name or _is_gdrive)  # 드라이브 링크면 파일명에서 자동 추출
                 and api_ok
             ),
             use_container_width=True,
             type="primary",
         )
-        if has_video_input and not has_creator_name:
+        if has_video_input and not has_creator_name and not _is_gdrive:
             st.caption("⚠️ 크리에이터 이름을 입력해야 검수를 시작할 수 있습니다.")
+        elif has_video_input and not has_creator_name and _is_gdrive:
+            st.caption("💡 파일명에서 크리에이터 이름이 자동 추출됩니다.")
 
 # --- Main Area ---
 _top_status = st.container()  # 검수 진행 상태를 최상단에 표시
@@ -1103,6 +1113,16 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
             tmp_path.unlink(missing_ok=True)
             video_items.append((filename, video_bytes))
             st.success(f"다운로드 완료: {filename} ({len(video_bytes) // (1024*1024)}MB)")
+
+            # 크리에이터 이름 미입력 시 파일명에서 자동 추출 (틱톡핸들_아무거나.mp4)
+            if not c_name and "_" in filename:
+                import re as _re_handle
+                _stem = filename.rsplit(".", 1)[0]  # 확장자 제거
+                _handle = _stem.split("_")[0]       # 첫 번째 _ 앞이 핸들
+                if _handle:
+                    c_name = _handle
+                    st.session_state["creator_name"] = c_name
+                    st.info(f"📎 파일명에서 크리에이터 자동 추출: **{c_name}**")
         else:
             for vf in video_files:
                 video_items.append((vf.name, vf.read()))
