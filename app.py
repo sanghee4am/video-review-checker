@@ -689,8 +689,8 @@ with tab1:
                             if report.revision_comparison:
                                 st.markdown("**🔄 이전 대비 변경사항:**")
                                 for rc in report.revision_comparison:
-                                    _rc_icon = {"fixed": "✅", "partial": "🟡", "still_issue": "❌", "new_issue": "🆕"}.get(rc.status, "❓")
-                                    st.markdown(f"- {_rc_icon} {rc.item} — {rc.detail}")
+                                    _rc_icon = {"fixed": "✅", "partially_fixed": "🟡", "still_pending": "❌"}.get(rc.status, "❓")
+                                    st.markdown(f"- {_rc_icon} {rc.item} — {rc.current_finding}")
 
                         # --- Admin decision buttons on every review ---
                         rev_id = rev["id"]
