@@ -1175,6 +1175,7 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
                 review_round=current_round,
             )
 
+            report.attach_thumbnails(processed_video)
             all_results[filename] = {
                 "processed_video": processed_video,
                 "report": report,
@@ -1627,26 +1628,25 @@ with tab3:
                 "general": "일반 편집",
             }
 
-            # --- Build scene→thumbnail mapping from video frames ---
-            scene_thumbs = {}
-            processed_video = st.session_state.get("processed_video")
-            if processed_video and report.scene_reviews:
-                for sr in report.scene_reviews:
-                    m = _re.search(r"([\d.]+)\s*[-~]\s*([\d.]+)", sr.matched_time_range or "")
-                    if m:
-                        t_start = float(m.group(1))
-                        t_mid = (t_start + float(m.group(2))) / 2
-                    else:
-                        t_mid = None
-
-                    if t_mid is not None:
-                        best_frame = min(
-                            processed_video.frames,
-                            key=lambda f: abs(f.timestamp - t_mid),
-                        )
-                        scene_thumbs[sr.scene_number] = _b64.b64encode(
-                            best_frame.image_bytes
-                        ).decode("utf-8")
+            # --- Build scene→thumbnail mapping: saved in report first, fallback to session ---
+            scene_thumbs = {int(k): v for k, v in report.scene_thumbnails.items()} if report.scene_thumbnails else {}
+            if not scene_thumbs:
+                processed_video = st.session_state.get("processed_video")
+                if processed_video and report.scene_reviews:
+                    for sr in report.scene_reviews:
+                        m = _re.search(r"([\d.]+)\s*[-~]\s*([\d.]+)", sr.matched_time_range or "")
+                        if m:
+                            t_mid = (float(m.group(1)) + float(m.group(2))) / 2
+                        else:
+                            continue
+                        if processed_video.frames:
+                            best_frame = min(
+                                processed_video.frames,
+                                key=lambda f: abs(f.timestamp - t_mid),
+                            )
+                            scene_thumbs[sr.scene_number] = _b64.b64encode(
+                                best_frame.image_bytes
+                            ).decode("utf-8")
 
             # --- Build table HTML ---
             html = ['<div class="tips-wrap"><table class="tips-table">']

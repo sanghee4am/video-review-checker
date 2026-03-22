@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import io
+import re
 from typing import Dict, List
 
 from pydantic import BaseModel, Field
@@ -54,3 +57,36 @@ class ReviewReport(BaseModel):
     brand_sheet_comment_en: str = Field(default="", description="Formatted comment for brand review sheet in English")
     revision_comparison: List[RevisionComparison] = Field(default_factory=list, description="Comparison with previous review")
     review_round: int = Field(default=1, description="Review round number")
+    scene_thumbnails: Dict[str, str] = Field(default_factory=dict, description="Scene number → base64 JPEG thumbnail (small, ~15KB each)")
+
+    def attach_thumbnails(self, processed_video) -> None:
+        """Extract scene thumbnails from processed video and store as small base64 JPEGs.
+
+        processed_video: ProcessedVideo with .frames (list of VideoFrame with .timestamp, .image_bytes)
+        """
+        if not processed_video or not getattr(processed_video, "frames", None):
+            return
+
+        from PIL import Image
+
+        THUMB_MAX_W, THUMB_MAX_H = 200, 356  # Small thumbnail
+
+        for sr in self.scene_reviews:
+            m = re.search(r"([\d.]+)\s*[-~]\s*([\d.]+)", sr.matched_time_range or "")
+            if m:
+                t_mid = (float(m.group(1)) + float(m.group(2))) / 2
+            else:
+                continue
+
+            best_frame = min(
+                processed_video.frames,
+                key=lambda f: abs(f.timestamp - t_mid),
+            )
+            # Resize to small thumbnail
+            img = Image.open(io.BytesIO(best_frame.image_bytes))
+            if img.mode in ("RGBA", "P", "LA"):
+                img = img.convert("RGB")
+            img.thumbnail((THUMB_MAX_W, THUMB_MAX_H), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=70)
+            self.scene_thumbnails[str(sr.scene_number)] = base64.b64encode(buf.getvalue()).decode("utf-8")

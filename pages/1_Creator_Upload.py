@@ -670,24 +670,25 @@ def _render_review_results(report: ReviewReport):
             "transition": t("cat_transition"), "layout": t("cat_layout"),
             "sfx": t("cat_sfx"), "general": t("cat_general"),
         }
-        scene_thumbs = {}
-        processed_video = st.session_state.get("creator_processed_video")
-        if processed_video and report.scene_reviews:
-            for sr in report.scene_reviews:
-                m = _re.search(r"([\d.]+)\s*[-~]\s*([\d.]+)", sr.matched_time_range or "")
-                if m:
-                    t_start = float(m.group(1))
-                    t_mid = (t_start + float(m.group(2))) / 2
-                else:
-                    t_mid = None
-                if t_mid is not None and processed_video.frames:
-                    best_frame = min(
-                        processed_video.frames,
-                        key=lambda f: abs(f.timestamp - t_mid),
-                    )
-                    scene_thumbs[sr.scene_number] = _b64.b64encode(
-                        best_frame.image_bytes
-                    ).decode("utf-8")
+        # Use saved thumbnails from report (persisted in DB), fallback to session video
+        scene_thumbs = {int(k): v for k, v in report.scene_thumbnails.items()} if report.scene_thumbnails else {}
+        if not scene_thumbs:
+            processed_video = st.session_state.get("creator_processed_video")
+            if processed_video and report.scene_reviews:
+                for sr in report.scene_reviews:
+                    m = _re.search(r"([\d.]+)\s*[-~]\s*([\d.]+)", sr.matched_time_range or "")
+                    if m:
+                        t_mid = (float(m.group(1)) + float(m.group(2))) / 2
+                    else:
+                        continue
+                    if processed_video.frames:
+                        best_frame = min(
+                            processed_video.frames,
+                            key=lambda f: abs(f.timestamp - t_mid),
+                        )
+                        scene_thumbs[sr.scene_number] = _b64.b64encode(
+                            best_frame.image_bytes
+                        ).decode("utf-8")
 
         html = ['<div class="tips-wrap"><table class="tips-table">']
         html.append(
@@ -1025,6 +1026,7 @@ def _render_upload_form(campaign_id: str, c_name: str, guideline_obj):
                 review_round=current_round,
             )
 
+            report.attach_thumbnails(processed_video)
             db.save_review(campaign_id, c_name, report, current_round)
             progress.progress(100, text=t("done"))
 
