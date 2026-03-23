@@ -378,12 +378,13 @@ with st.sidebar:
                 key="video_upload",
             )
         else:
-            gdrive_video_url = st.text_input(
+            gdrive_video_url = st.text_area(
                 "Google Drive 영상 링크",
-                placeholder="https://drive.google.com/file/d/.../view",
+                placeholder="https://drive.google.com/file/d/.../view\n(여러 개는 줄바꿈으로 구분)",
+                height=100,
                 key="gdrive_video_url",
             )
-            st.caption("파일이 '링크가 있는 모든 사람'으로 공유되어 있어야 합니다.")
+            st.caption("여러 영상은 줄바꿈으로 구분해서 붙여넣으세요.")
 
         st.subheader("3. 크리에이터 정보")
         # 드라이브 링크에서 틱톡핸들 자동 추출 (파일명: 틱톡핸들_아무거나.mp4)
@@ -1119,39 +1120,53 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
         if gdrive_video_url.strip() and not video_files:
             from utils.gdrive_video import download_gdrive_video, is_gdrive_url
 
-            if not is_gdrive_url(gdrive_video_url.strip()):
-                st.error("올바른 Google Drive 링크가 아닙니다.")
-                st.stop()
+            # Parse multiple URLs (newline-separated)
+            _gdrive_urls = [u.strip() for u in gdrive_video_url.strip().splitlines() if u.strip()]
+            _total_urls = len(_gdrive_urls)
 
-            progress_bar.progress(3, text="Google Drive에서 영상 다운로드 중...")
+            for _url_idx, _single_url in enumerate(_gdrive_urls):
+                if not is_gdrive_url(_single_url):
+                    st.error(f"올바른 Google Drive 링크가 아닙니다: {_single_url[:60]}...")
+                    continue
 
-            def dl_progress(dl_mb, total_mb):
-                if total_mb:
-                    pct = min(int((dl_mb / total_mb) * 15) + 3, 18)
-                    progress_bar.progress(pct, text=f"다운로드 중... {dl_mb:.0f}/{total_mb:.0f} MB")
-                else:
-                    progress_bar.progress(10, text=f"다운로드 중... {dl_mb:.0f} MB")
+                progress_bar.progress(
+                    3 + int((_url_idx / _total_urls) * 15),
+                    text=f"Google Drive에서 다운로드 중... ({_url_idx + 1}/{_total_urls})",
+                )
 
-            filename, tmp_path = download_gdrive_video(gdrive_video_url.strip(), dl_progress)
-            video_bytes = tmp_path.read_bytes()
-            tmp_path.unlink(missing_ok=True)
-            video_items.append((filename, video_bytes))
-            st.success(f"다운로드 완료: {filename} ({len(video_bytes) // (1024*1024)}MB)")
+                def dl_progress(dl_mb, total_mb, _idx=_url_idx, _tot=_total_urls):
+                    base = 3 + int((_idx / _tot) * 15)
+                    per_url = int(15 / _tot)
+                    if total_mb:
+                        pct = base + min(int((dl_mb / total_mb) * per_url), per_url)
+                        progress_bar.progress(pct, text=f"다운로드 중 ({_idx+1}/{_tot})... {dl_mb:.0f}/{total_mb:.0f} MB")
+                    else:
+                        progress_bar.progress(base + per_url // 2, text=f"다운로드 중 ({_idx+1}/{_tot})... {dl_mb:.0f} MB")
 
-            # draft 번호 추출 (Drive 다운로드 후)
-            if not _draft_round:
-                _dm = _re_draft.search(r'draft\s*(\d+)', filename, _re_draft.IGNORECASE)
+                try:
+                    filename, tmp_path = download_gdrive_video(_single_url, dl_progress)
+                    video_bytes = tmp_path.read_bytes()
+                    tmp_path.unlink(missing_ok=True)
+                    video_items.append((filename, video_bytes))
+                    st.success(f"다운로드 완료: {filename} ({len(video_bytes) // (1024*1024)}MB)")
+                except Exception as e:
+                    st.error(f"다운로드 실패: {_single_url[:60]}... — {e}")
+                    continue
+
+            # draft 번호 추출 (첫 번째 파일명 기준)
+            if video_items and not _draft_round:
+                _first_fn = video_items[0][0]
+                _dm = _re_draft.search(r'draft\s*(\d+)', _first_fn, _re_draft.IGNORECASE)
                 if not _dm:
-                    _dm = _re_draft.search(r'(\d+)\s*차', filename)
+                    _dm = _re_draft.search(r'(\d+)\s*차', _first_fn)
                 if _dm:
                     _draft_round = int(_dm.group(1))
                     current_round = _draft_round
 
             # 크리에이터 이름 미입력 시 파일명에서 자동 추출 (틱톡핸들_아무거나.mp4)
-            if not c_name and "_" in filename:
-                import re as _re_handle
-                _stem = filename.rsplit(".", 1)[0]  # 확장자 제거
-                _handle = _stem.split("_")[0]       # 첫 번째 _ 앞이 핸들
+            if video_items and not c_name and "_" in video_items[0][0]:
+                _stem = video_items[0][0].rsplit(".", 1)[0]
+                _handle = _stem.split("_")[0]
                 if _handle:
                     c_name = _handle
                     st.session_state["_prefill_creator_name"] = c_name
