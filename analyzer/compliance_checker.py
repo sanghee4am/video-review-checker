@@ -568,14 +568,40 @@ def _call_claude_with_retry(client, content, max_tokens=8192, max_retries=5):
 
 
 def _parse_json_response(text: str) -> dict:
-    """Parse JSON from Claude response, handling markdown wrapping."""
+    """Parse JSON from Claude response, handling markdown wrapping and minor errors."""
     text = text.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1]
         if text.endswith("```"):
             text = text[:-3]
         text = text.strip()
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # Try extracting JSON object between first { and last }
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            pass
+    # Try fixing common issues: trailing commas, unescaped newlines in strings
+    import re as _re_json
+    cleaned = _re_json.sub(r',\s*([}\]])', r'\1', text)  # remove trailing commas
+    cleaned = cleaned.replace('\n', '\\n')  # escape raw newlines (but not already escaped)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    # Last resort: extract between { }
+    if start != -1 and end != -1:
+        cleaned2 = _re_json.sub(r',\s*([}\]])', r'\1', text[start:end + 1])
+        try:
+            return json.loads(cleaned2)
+        except json.JSONDecodeError:
+            raise ValueError(f"AI 응답을 JSON으로 파싱할 수 없습니다. 다시 시도해주세요.\n응답 앞부분: {text[:200]}")
 
 
 def run_compliance_check(
