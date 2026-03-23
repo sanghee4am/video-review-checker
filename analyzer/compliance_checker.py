@@ -575,33 +575,32 @@ def _parse_json_response(text: str) -> dict:
         if text.endswith("```"):
             text = text[:-3]
         text = text.strip()
+
+    # Extract JSON between first { and last }
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end + 1]
+
+    # Try strict parse first
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # Try extracting JSON object between first { and last }
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        try:
-            return json.loads(text[start:end + 1])
-        except json.JSONDecodeError:
-            pass
-    # Try fixing common issues: trailing commas, unescaped newlines in strings
-    import re as _re_json
-    cleaned = _re_json.sub(r',\s*([}\]])', r'\1', text)  # remove trailing commas
-    cleaned = cleaned.replace('\n', '\\n')  # escape raw newlines (but not already escaped)
+
+    # Try lenient parse (allows control chars like raw newlines in strings)
     try:
-        return json.loads(cleaned)
+        return json.loads(text, strict=False)
     except json.JSONDecodeError:
         pass
-    # Last resort: extract between { }
-    if start != -1 and end != -1:
-        cleaned2 = _re_json.sub(r',\s*([}\]])', r'\1', text[start:end + 1])
-        try:
-            return json.loads(cleaned2)
-        except json.JSONDecodeError:
-            raise ValueError(f"AI 응답을 JSON으로 파싱할 수 없습니다. 다시 시도해주세요.\n응답 앞부분: {text[:200]}")
+
+    # Fix trailing commas + lenient
+    import re as _re_json
+    cleaned = _re_json.sub(r',\s*([}\]])', r'\1', text)
+    try:
+        return json.loads(cleaned, strict=False)
+    except json.JSONDecodeError:
+        raise ValueError(f"AI 응답을 JSON으로 파싱할 수 없습니다. 다시 시도해주세요.\n응답 앞부분: {text[:200]}")
 
 
 def run_compliance_check(
