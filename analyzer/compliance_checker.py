@@ -652,8 +652,17 @@ def _parse_json_response(text: str) -> dict:
     try:
         return json.loads(fixed, strict=False)
     except json.JSONDecodeError as e:
-        logger.error("JSON parse failed after all fixes. Error: %s\nRaw response (first 500 chars): %s", e, text[:500])
-        raise ValueError(f"AI 응답을 JSON으로 파싱할 수 없습니다. 다시 시도해주세요.\n에러: {e}\n응답 앞부분: {text[:300]}")
+        # Log the area around the error position for debugging
+        pos = e.pos or 0
+        context_start = max(0, pos - 80)
+        context_end = min(len(fixed), pos + 80)
+        error_context = fixed[context_start:context_end]
+        logger.error("JSON parse failed. Error: %s\nAround error (char %d): ...%s...", e, pos, repr(error_context))
+        raise ValueError(
+            f"AI 응답을 JSON으로 파싱할 수 없습니다. 다시 시도해주세요.\n"
+            f"에러: {e}\n"
+            f"에러 위치 주변: ...{error_context}..."
+        )
 
 
 def run_compliance_check(
