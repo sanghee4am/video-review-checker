@@ -63,6 +63,7 @@ class ReviewReport(BaseModel):
         """Extract scene thumbnails from processed video and store as small base64 JPEGs.
 
         processed_video: ProcessedVideo with .frames (list of VideoFrame with .timestamp, .image_bytes)
+        Covers both scene_reviews and editing_tips scenes.
         """
         if not processed_video or not getattr(processed_video, "frames", None):
             return
@@ -71,22 +72,32 @@ class ReviewReport(BaseModel):
 
         THUMB_MAX_W, THUMB_MAX_H = 200, 356  # Small thumbnail
 
+        # Collect all scene_number → mid_timestamp mappings
+        scene_times: Dict[int, float] = {}
         for sr in self.scene_reviews:
             m = re.search(r"([\d.]+)\s*[-~]\s*([\d.]+)", sr.matched_time_range or "")
             if m:
-                t_mid = (float(m.group(1)) + float(m.group(2))) / 2
-            else:
-                continue
+                scene_times[sr.scene_number] = (float(m.group(1)) + float(m.group(2))) / 2
 
+        # Also cover editing_tips scenes that reference scene_reviews
+        for tip in self.editing_tips:
+            if tip.scene_number > 0 and tip.scene_number not in scene_times:
+                # Try to find time from scene_reviews
+                sr_match = next((sr for sr in self.scene_reviews if sr.scene_number == tip.scene_number), None)
+                if sr_match:
+                    m = re.search(r"([\d.]+)\s*[-~]\s*([\d.]+)", sr_match.matched_time_range or "")
+                    if m:
+                        scene_times[tip.scene_number] = (float(m.group(1)) + float(m.group(2))) / 2
+
+        for scene_num, t_mid in scene_times.items():
             best_frame = min(
                 processed_video.frames,
                 key=lambda f: abs(f.timestamp - t_mid),
             )
-            # Resize to small thumbnail
             img = Image.open(io.BytesIO(best_frame.image_bytes))
             if img.mode in ("RGBA", "P", "LA"):
                 img = img.convert("RGB")
             img.thumbnail((THUMB_MAX_W, THUMB_MAX_H), Image.LANCZOS)
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=70)
-            self.scene_thumbnails[str(sr.scene_number)] = base64.b64encode(buf.getvalue()).decode("utf-8")
+            self.scene_thumbnails[str(scene_num)] = base64.b64encode(buf.getvalue()).decode("utf-8")
