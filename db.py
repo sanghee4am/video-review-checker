@@ -166,7 +166,7 @@ def list_reviews(campaign_name: str) -> list[dict]:
     sb = _get_client()
     result = (
         sb.table("vc_reviews")
-        .select("id, creator_name, round, overall_score, overall_status, created_at, admin_decision, admin_memo, brand_feedback")
+        .select("id, creator_name, round, overall_score, overall_status, created_at, admin_decision, admin_memo, brand_feedback, report_json")
         .eq("campaign_name", campaign_name)
         .order("created_at", desc=True)
         .execute()
