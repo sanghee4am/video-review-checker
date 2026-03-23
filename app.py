@@ -488,10 +488,9 @@ with st.sidebar:
 # --- Main Area ---
 _top_status = st.container()  # 검수 진행 상태를 최상단에 표시
 if st.session_state.pop("_review_just_completed", False):
-    _top_status.success("검수가 완료되었습니다! '가이드라인' 탭에서 크리에이터 현황을 확인하세요.")
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📋 가이드라인", "🔍 검수 결과", "🎨 편집 팁",
-    "📊 브랜드사 전달", "🔗 업로드 확인",
+    _top_status.success("검수가 완료되었습니다! '캠페인 관리' 탭에서 크리에이터 현황을 확인하세요.")
+tab1, tab2, tab3 = st.tabs([
+    "📋 캠페인 관리", "🔍 검수 결과", "🔗 캡션 검수",
 ])
 
 # ===== Guideline Parsing =====
@@ -613,8 +612,30 @@ with tab1:
                         f"{extra_badges}"
                     )
                 with col_btn:
-                    if st.button("상세", key=f"detail_{idx}"):
-                        st.session_state["view_creator_detail"] = sub.get("creator_name", "알 수 없음")
+                    _btn_col1, _btn_col2 = st.columns(2)
+                    with _btn_col1:
+                        if st.button("📊 결과", key=f"result_{idx}", use_container_width=True):
+                            # Load latest review into Tab 2
+                            _cr_name = sub.get("creator_name", "알 수 없음")
+                            _cr_reviews = db.get_creator_reviews(_campaign_id_tab1, _cr_name)
+                            if _cr_reviews:
+                                _latest = _cr_reviews[0]
+                                _loaded_report = ReviewReport.model_validate(_latest["report_json"])
+                                st.session_state["review_report"] = _loaded_report
+                                st.session_state["processed_video"] = None
+                                st.session_state["batch_results"] = {
+                                    f"{_cr_name}_round{_latest.get('round', 1)}": {
+                                        "processed_video": None,
+                                        "report": _loaded_report,
+                                    }
+                                }
+                                st.session_state["selected_video"] = f"{_cr_name}_round{_latest.get('round', 1)}"
+                                st.session_state["_loaded_from_history"] = True
+                                st.toast(f"✅ {_cr_name} 검수 결과 → 검수 결과 탭에서 확인!")
+                                st.rerun()
+                    with _btn_col2:
+                        if st.button("📋 이력", key=f"detail_{idx}", use_container_width=True):
+                            st.session_state["view_creator_detail"] = sub.get("creator_name", "알 수 없음")
 
             # Show detailed review history for selected creator
             if "view_creator_detail" in st.session_state:
@@ -1623,66 +1644,64 @@ with tab2:
 
             st.divider()
 
-            # --- Revision email (Korean + English tabs) ---
-            st.markdown("### 📧 수정 안내 메일")
-            if report.revision_items:
-                st.markdown("**수정 항목 요약:**")
-                for i, item in enumerate(report.revision_items, 1):
-                    st.markdown(f"{i}. {item}")
-                st.markdown("")
+            # --- Revision email (Korean + English tabs, collapsed) ---
+            with st.expander("✉️ 수정 안내 이메일 초안", expanded=False):
+                if report.revision_items:
+                    st.markdown("**수정 항목 요약:**")
+                    for i, item in enumerate(report.revision_items, 1):
+                        st.markdown(f"{i}. {item}")
+                    st.markdown("")
 
-            email_tab_ko, email_tab_en = st.tabs(["🇰🇷 한국어", "🇺🇸 English"])
+                email_tab_ko, email_tab_en = st.tabs(["🇰🇷 한국어", "🇺🇸 English"])
 
-            with email_tab_ko:
-                email_text_ko = st.text_area(
-                    "한국어 메일 (편집 가능)",
-                    value=report.email_draft,
-                    height=350,
-                    key="email_draft_ko",
-                )
-                col_ko1, col_ko2, _ = st.columns([1, 1, 2])
-                with col_ko1:
-                    st.download_button(
-                        label="📥 한국어 메일 다운로드",
-                        data=email_text_ko,
-                        file_name="revision_request_ko.txt",
-                        mime="text/plain",
-                        use_container_width=True,
+                with email_tab_ko:
+                    email_text_ko = st.text_area(
+                        "한국어 메일 (편집 가능)",
+                        value=report.email_draft,
+                        height=350,
+                        key="email_draft_ko",
                     )
-                with col_ko2:
-                    if st.button("📋 복사", key="copy_email_ko", use_container_width=True):
-                        st.components.v1.html(
-                            f'<script>navigator.clipboard.writeText({json.dumps(email_text_ko)});</script>',
-                            height=0,
+                    col_ko1, col_ko2, _ = st.columns([1, 1, 2])
+                    with col_ko1:
+                        st.download_button(
+                            label="📥 한국어 메일 다운로드",
+                            data=email_text_ko,
+                            file_name="revision_request_ko.txt",
+                            mime="text/plain",
+                            use_container_width=True,
                         )
-                        st.toast("클립보드에 복사되었습니다!")
+                    with col_ko2:
+                        if st.button("📋 복사", key="copy_email_ko", use_container_width=True):
+                            st.components.v1.html(
+                                f'<script>navigator.clipboard.writeText({json.dumps(email_text_ko)});</script>',
+                                height=0,
+                            )
+                            st.toast("클립보드에 복사되었습니다!")
 
-            with email_tab_en:
-                email_en_value = report.email_draft_en if report.email_draft_en else "(영어 버전이 생성되지 않았습니다. 검수를 다시 실행해주세요.)"
-                email_text_en = st.text_area(
-                    "English email (editable)",
-                    value=email_en_value,
-                    height=350,
-                    key="email_draft_en",
-                )
-                col_en1, col_en2, _ = st.columns([1, 1, 2])
-                with col_en1:
-                    st.download_button(
-                        label="📥 Download English email",
-                        data=email_text_en,
-                        file_name="revision_request_en.txt",
-                        mime="text/plain",
-                        use_container_width=True,
+                with email_tab_en:
+                    email_en_value = report.email_draft_en if report.email_draft_en else "(영어 버전이 생성되지 않았습니다. 검수를 다시 실행해주세요.)"
+                    email_text_en = st.text_area(
+                        "English email (editable)",
+                        value=email_en_value,
+                        height=350,
+                        key="email_draft_en",
                     )
-                with col_en2:
-                    if st.button("📋 Copy", key="copy_email_en", use_container_width=True):
-                        st.components.v1.html(
-                            f'<script>navigator.clipboard.writeText({json.dumps(email_text_en)});</script>',
-                            height=0,
+                    col_en1, col_en2, _ = st.columns([1, 1, 2])
+                    with col_en1:
+                        st.download_button(
+                            label="📥 Download English email",
+                            data=email_text_en,
+                            file_name="revision_request_en.txt",
+                            mime="text/plain",
+                            use_container_width=True,
                         )
-                        st.toast("Copied to clipboard!")
-
-            st.divider()
+                    with col_en2:
+                        if st.button("📋 Copy", key="copy_email_en", use_container_width=True):
+                            st.components.v1.html(
+                                f'<script>navigator.clipboard.writeText({json.dumps(email_text_en)});</script>',
+                                height=0,
+                            )
+                            st.toast("Copied to clipboard!")
 
         # --- Admin Manual Decision (always visible) ---
         _rid = st.session_state.get("last_review_id")
@@ -1809,17 +1828,11 @@ with tab2:
                         if _prev_rev.get("brand_feedback"):
                             st.warning(f"**브랜드 피드백:** {_prev_rev['brand_feedback']}")
 
-    else:
-        st.info("검수가 완료되면 여기에 결과가 표시됩니다.")
-
-
-# ===== Tab 3: Editing Tips =====
-with tab3:
-    if "review_report" in st.session_state:
-        import base64 as _b64
-        import re as _re
-
-        report: ReviewReport = st.session_state["review_report"]
+        # ===== Editing Tips (integrated) =====
+        st.divider()
+        st.markdown("### ✂️ 캡컷 편집 팁")
+        import base64 as _b64_tips
+        import re as _re_tips
 
         if report.editing_tips:
             category_names = {
@@ -1837,7 +1850,7 @@ with tab3:
                 processed_video = st.session_state.get("processed_video")
                 if processed_video and report.scene_reviews:
                     for sr in report.scene_reviews:
-                        m = _re.search(r"([\d.]+)\s*[-~]\s*([\d.]+)", sr.matched_time_range or "")
+                        m = _re_tips.search(r"([\d.]+)\s*[-~]\s*([\d.]+)", sr.matched_time_range or "")
                         if m:
                             t_mid = (float(m.group(1)) + float(m.group(2))) / 2
                         else:
@@ -1847,7 +1860,7 @@ with tab3:
                                 processed_video.frames,
                                 key=lambda f: abs(f.timestamp - t_mid),
                             )
-                            scene_thumbs[sr.scene_number] = _b64.b64encode(
+                            scene_thumbs[sr.scene_number] = _b64_tips.b64encode(
                                 best_frame.image_bytes
                             ).decode("utf-8")
 
@@ -1957,78 +1970,12 @@ with tab3:
                 file_name="editing_tips.txt",
                 mime="text/plain",
             )
-        else:
-            st.info("검수가 완료되면 편집 팁이 생성됩니다.")
     else:
-        st.info("검수가 완료되면 편집 팁이 생성됩니다.")
+        st.info("검수가 완료되면 여기에 결과가 표시됩니다.")
 
 
-# ===== Tab 4: Brand Sheet Comment =====
-with tab4:
-    if "review_report" in st.session_state:
-        report: ReviewReport = st.session_state["review_report"]
-
-        st.markdown("### 📊 브랜드사 전달용 코멘트")
-        st.caption("검수 결과를 브랜드사 공유 시트에 붙여넣을 수 있는 형태로 정리했습니다.")
-
-        brand_tab_ko, brand_tab_en = st.tabs(["🇰🇷 한국어", "🇺🇸 English"])
-
-        with brand_tab_ko:
-            brand_ko = report.brand_sheet_comment or "(브랜드 코멘트가 생성되지 않았습니다.)"
-            brand_text_ko = st.text_area(
-                "한국어 코멘트 (편집 가능)",
-                value=brand_ko,
-                height=300,
-                key="brand_comment_ko",
-            )
-            col_bk1, col_bk2, _ = st.columns([1, 1, 2])
-            with col_bk1:
-                st.download_button(
-                    label="📥 다운로드",
-                    data=brand_text_ko,
-                    file_name="brand_comment_ko.txt",
-                    mime="text/plain",
-                    use_container_width=True,
-                )
-            with col_bk2:
-                if st.button("📋 복사", key="copy_brand_ko", use_container_width=True):
-                    st.components.v1.html(
-                        f'<script>navigator.clipboard.writeText({json.dumps(brand_text_ko)});</script>',
-                        height=0,
-                    )
-                    st.toast("클립보드에 복사되었습니다!")
-
-        with brand_tab_en:
-            brand_en = report.brand_sheet_comment_en or "(English comment not generated.)"
-            brand_text_en = st.text_area(
-                "English comment (editable)",
-                value=brand_en,
-                height=300,
-                key="brand_comment_en",
-            )
-            col_be1, col_be2, _ = st.columns([1, 1, 2])
-            with col_be1:
-                st.download_button(
-                    label="📥 Download",
-                    data=brand_text_en,
-                    file_name="brand_comment_en.txt",
-                    mime="text/plain",
-                    use_container_width=True,
-                )
-            with col_be2:
-                if st.button("📋 Copy", key="copy_brand_en", use_container_width=True):
-                    st.components.v1.html(
-                        f'<script>navigator.clipboard.writeText({json.dumps(brand_text_en)});</script>',
-                        height=0,
-                    )
-                    st.toast("Copied to clipboard!")
-
-    else:
-        st.info("검수가 완료되면 브랜드사 전달용 코멘트가 생성됩니다.")
-
-
-# ===== Tab 5: Upload Check =====
-with tab5:
+# ===== Tab 3: Caption Check =====
+with tab3:
     st.markdown("### 🔗 업로드 후 확인")
     st.caption("크리에이터가 업로드한 게시물의 캡션에 필수 요소(해시태그, 멘션, 광고 표시 등)가 포함되었는지 확인합니다.")
 
