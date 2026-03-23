@@ -655,6 +655,15 @@ with tab1:
 
                         # --- Full review detail (same as what creator sees) ---
                         with st.expander("📄 전체 검수 결과 보기 (크리에이터 뷰)", expanded=False):
+                            # Scene thumbnails (saved in report)
+                            if report.scene_thumbnails:
+                                st.markdown("**🖼️ 장면 스크린샷:**")
+                                _th_cols = st.columns(min(len(report.scene_thumbnails), 4))
+                                for _ti, (_sn, _tb64) in enumerate(report.scene_thumbnails.items()):
+                                    with _th_cols[_ti % len(_th_cols)]:
+                                        import base64 as _b64_hist
+                                        st.image(_b64_hist.b64decode(_tb64), caption=f"Scene {_sn}", use_container_width=True)
+
                             # Scene reviews
                             if report.scene_reviews:
                                 st.markdown("**🎬 장면별 검수:**")
@@ -664,6 +673,13 @@ with tab1:
                                     st.markdown(
                                         f"**{_sr_icon} Scene {sr.scene_number}{_sr_time}** — {sr.guideline_description}"
                                     )
+                                    # Show thumbnail next to scene if available
+                                    if report.scene_thumbnails and str(sr.scene_number) in report.scene_thumbnails:
+                                        import base64 as _b64_sr
+                                        st.image(
+                                            _b64_sr.b64decode(report.scene_thumbnails[str(sr.scene_number)]),
+                                            width=180,
+                                        )
                                     if sr.findings:
                                         st.caption(sr.findings)
                                     if sr.suggestion:
