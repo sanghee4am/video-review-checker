@@ -1106,8 +1106,8 @@ def _try_sheet_and_slack(campaign_name: str, creator_name: str, report):
         except Exception as e:
             st.toast(f"⚠️ 시트 업데이트 실패: {e}")
 
-    # 슬랙 알림
-    if SLACK_BOT_TOKEN:
+    # 슬랙 알림 (임시 비활성화 — 테스트 중 노이즈 방지)
+    if False and SLACK_BOT_TOKEN:
         try:
             from pipeline.slack_notifier import notify_review_complete
             sheet_url = f"https://docs.google.com/spreadsheets/d/{config['sheet_id']}" if config else ""
