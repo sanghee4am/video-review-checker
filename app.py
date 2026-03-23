@@ -412,10 +412,10 @@ with st.sidebar:
             if prev:
                 prev_report, prev_round = prev
                 st.info(
-                    f"📋 이전 검수 이력 발견! (Round {prev_round}, "
+                    f"📋 이전 검수 이력 있음 (Draft {prev_round}, "
                     f"점수: {prev_report.overall_score}점, "
                     f"상태: {prev_report.overall_status})\n"
-                    f"→ 이번 검수는 **Round {prev_round + 1}**로 진행됩니다."
+                    f"파일명에 `draft2` 등이 포함되면 자동 인식됩니다."
                 )
 
             # Check for brand feedback from previous reviews
