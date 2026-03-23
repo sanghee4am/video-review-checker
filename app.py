@@ -1232,45 +1232,45 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
         memo = st.session_state.get("review_memo", "")
         brand_feedback_for_review = st.session_state.get("_prev_brand_feedback", "")
 
-        import threading
-        _completed_count = [0]
-        _progress_lock = threading.Lock()
-
         def _run_single_review(filename, processed_video):
-            def update_progress(step, total, msg):
-                with _progress_lock:
-                    done = _completed_count[0]
-                    base_pct = 30 + int((done / num_videos) * 65)
-                    per_video_pct = int(65 / max(num_videos, 1))
-                    pct = base_pct + int((step / total) * per_video_pct)
-                    progress_bar.progress(min(pct, 95), text=f"[{filename}] {msg}")
-
+            """Run review without progress callback (thread-safe)."""
             report = run_compliance_check(
                 guideline=guideline,
                 guideline_images=guideline_images,
                 video=processed_video,
-                progress_callback=update_progress,
+                progress_callback=None,  # Streamlit widgets not thread-safe
                 memo=memo,
                 brand_feedback=brand_feedback_for_review,
                 previous_report=previous_report,
                 review_round=current_round,
             )
             report.attach_thumbnails(processed_video)
-            with _progress_lock:
-                _completed_count[0] += 1
-                progress_bar.progress(
-                    30 + int((_completed_count[0] / num_videos) * 65),
-                    text=f"검수 완료: {_completed_count[0]}/{num_videos}",
-                )
             return filename, {"processed_video": processed_video, "report": report}
 
         if num_videos == 1:
-            # Single video — no threading overhead
+            # Single video — use progress callback directly
             fname, pv = next(iter(processed_videos.items()))
-            fn, result = _run_single_review(fname, pv)
-            all_results[fn] = result
+
+            def update_progress(step, total, msg):
+                pct = 30 + int((step / total) * 65)
+                progress_bar.progress(min(pct, 95), text=f"[{fname}] {msg}")
+
+            report = run_compliance_check(
+                guideline=guideline,
+                guideline_images=guideline_images,
+                video=pv,
+                progress_callback=update_progress,
+                memo=memo,
+                brand_feedback=brand_feedback_for_review,
+                previous_report=previous_report,
+                review_round=current_round,
+            )
+            report.attach_thumbnails(pv)
+            all_results[fname] = {"processed_video": pv, "report": report}
         else:
             from concurrent.futures import ThreadPoolExecutor, as_completed
+            progress_bar.progress(30, text=f"영상 {num_videos}개 병렬 검수 중 (2개씩)...")
+            _done = 0
             with ThreadPoolExecutor(max_workers=2) as executor:
                 futures = {
                     executor.submit(_run_single_review, fname, pv): fname
@@ -1279,6 +1279,11 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
                 for future in as_completed(futures):
                     fn, result = future.result()
                     all_results[fn] = result
+                    _done += 1
+                    progress_bar.progress(
+                        30 + int((_done / num_videos) * 65),
+                        text=f"검수 완료: {_done}/{num_videos} — {fn}",
+                    )
 
         st.session_state["batch_results"] = all_results
         first_key = next(iter(all_results))
