@@ -1207,7 +1207,17 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
                 if _handle:
                     c_name = _handle
                     st.session_state["_prefill_creator_name"] = c_name
-                    st.info(f"📎 파일명에서 크리에이터 자동 추출: **{c_name}**")
+                    if len(video_items) > 1:
+                        # 여러 영상일 때 — 각 파일명에서 개별 추출 예고
+                        _creator_names = []
+                        for _vi_fn, _ in video_items:
+                            _vi_stem = _vi_fn.rsplit(".", 1)[0] if "." in _vi_fn else _vi_fn
+                            _vi_handle = _vi_stem.split("_")[0] if "_" in _vi_stem else _vi_stem
+                            if _vi_handle and _vi_handle not in _creator_names:
+                                _creator_names.append(_vi_handle)
+                        st.info(f"📎 파일명에서 크리에이터 {len(_creator_names)}명 자동 인식: **{', '.join(_creator_names)}**")
+                    else:
+                        st.info(f"📎 파일명에서 크리에이터 자동 추출: **{c_name}**")
         else:
             for vf in video_files:
                 video_items.append((vf.name, vf.read()))
