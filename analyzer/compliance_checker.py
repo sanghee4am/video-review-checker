@@ -609,13 +609,13 @@ def run_compliance_check(
 ) -> ReviewReport:
     """Run compliance check with ALL frames via batched analysis.
 
-    Phase 1: Analyze ALL frames in batches (8 frames per batch, 65s wait between)
+    Phase 1: Analyze ALL frames in batches (12 frames per batch)
     Phase 2: Final comprehensive review using all frame analyses + guideline
     """
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     guideline_json = guideline.model_dump_json(indent=2)
     total_frames = len(video.frames)
-    frames_per_batch = 8
+    frames_per_batch = 12
 
     # Filter out caption items from mandatory elements for review
     video_mandatory = [e for e in guideline.mandatory_elements if not _is_caption_item(e)]

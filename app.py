@@ -1227,23 +1227,23 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
             progress_callback=preprocess_progress,
         )
 
-        # --- Phase 2: Sequential compliance checks (Claude API) ---
+        # --- Phase 2: Parallel compliance checks (Claude API, 2 concurrent) ---
         all_results = {}  # filename -> {"processed_video": ..., "report": ...}
         memo = st.session_state.get("review_memo", "")
         brand_feedback_for_review = st.session_state.get("_prev_brand_feedback", "")
 
-        for vid_idx, (filename, processed_video) in enumerate(processed_videos.items()):
-            base_pct = 30 + int((vid_idx / num_videos) * 65)
-            per_video_pct = int(65 / num_videos)
+        import threading
+        _completed_count = [0]
+        _progress_lock = threading.Lock()
 
-            progress_bar.progress(
-                base_pct,
-                text=f"검수 중: {vid_idx + 1}/{num_videos} — {filename}",
-            )
-
+        def _run_single_review(filename, processed_video):
             def update_progress(step, total, msg):
-                pct = base_pct + int((step / total) * per_video_pct)
-                progress_bar.progress(min(pct, 95), text=f"[{filename}] {msg}")
+                with _progress_lock:
+                    done = _completed_count[0]
+                    base_pct = 30 + int((done / num_videos) * 65)
+                    per_video_pct = int(65 / max(num_videos, 1))
+                    pct = base_pct + int((step / total) * per_video_pct)
+                    progress_bar.progress(min(pct, 95), text=f"[{filename}] {msg}")
 
             report = run_compliance_check(
                 guideline=guideline,
@@ -1255,12 +1255,30 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
                 previous_report=previous_report,
                 review_round=current_round,
             )
-
             report.attach_thumbnails(processed_video)
-            all_results[filename] = {
-                "processed_video": processed_video,
-                "report": report,
-            }
+            with _progress_lock:
+                _completed_count[0] += 1
+                progress_bar.progress(
+                    30 + int((_completed_count[0] / num_videos) * 65),
+                    text=f"검수 완료: {_completed_count[0]}/{num_videos}",
+                )
+            return filename, {"processed_video": processed_video, "report": report}
+
+        if num_videos == 1:
+            # Single video — no threading overhead
+            fname, pv = next(iter(processed_videos.items()))
+            fn, result = _run_single_review(fname, pv)
+            all_results[fn] = result
+        else:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = {
+                    executor.submit(_run_single_review, fname, pv): fname
+                    for fname, pv in processed_videos.items()
+                }
+                for future in as_completed(futures):
+                    fn, result = future.result()
+                    all_results[fn] = result
 
         st.session_state["batch_results"] = all_results
         first_key = next(iter(all_results))
