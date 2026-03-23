@@ -634,6 +634,24 @@ with tab1:
                         expanded=(rev == reviews[0]),
                     ):
                         report = ReviewReport.model_validate(rev["report_json"])
+                        # "탭에서 보기" 버튼 — 클릭하면 Tab2/Tab3에 이 리뷰를 로드
+                        if st.button(
+                            f"📊 검수 결과 탭에서 보기",
+                            key=f"load_review_{rev['id']}",
+                            use_container_width=True,
+                        ):
+                            st.session_state["review_report"] = report
+                            st.session_state["processed_video"] = None
+                            st.session_state["batch_results"] = {
+                                f"{detail_creator}_round{rev.get('round', 1)}": {
+                                    "processed_video": None,
+                                    "report": report,
+                                }
+                            }
+                            st.session_state["selected_video"] = f"{detail_creator}_round{rev.get('round', 1)}"
+                            st.session_state["_loaded_from_history"] = True
+                            st.success("✅ 검수 결과 / 편집 팁 탭에서 확인하세요!")
+                            st.rerun()
                         st.markdown(f"**요약:** {report.summary}")
 
                         if md:
@@ -1400,6 +1418,9 @@ with tab2:
     if "review_report" in st.session_state:
         report: ReviewReport = st.session_state["review_report"]
         _pv = st.session_state.get("processed_video")
+
+        if st.session_state.get("_loaded_from_history"):
+            st.info("📂 저장된 검수 이력을 불러왔습니다. (Tab 1에서 다른 이력도 선택할 수 있습니다)")
 
         # --- Batch video selector (if multiple) ---
         if "batch_results" in st.session_state and len(st.session_state["batch_results"]) > 1:
