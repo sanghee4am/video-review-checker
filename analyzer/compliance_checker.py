@@ -667,8 +667,17 @@ def run_compliance_check(
         batch_content.extend(_build_frame_content_for_batch(batch))
         batch_content.append({"type": "text", "text": BATCH_ANALYSIS_PROMPT})
 
-        batch_response = _call_claude_with_retry(client, batch_content, max_tokens=4096)
-        batch_result = _parse_json_response(batch_response.content[0].text)
+        # Try up to 2 times if JSON parsing fails
+        for _parse_attempt in range(2):
+            batch_response = _call_claude_with_retry(client, batch_content, max_tokens=4096)
+            try:
+                batch_result = _parse_json_response(batch_response.content[0].text)
+                break
+            except (json.JSONDecodeError, ValueError):
+                if _parse_attempt == 0:
+                    time.sleep(3)  # wait and retry
+                else:
+                    raise
         all_frame_analyses.extend(batch_result.get("frame_analyses", []))
 
     # --- Phase 2: Final comprehensive review ---
@@ -749,8 +758,17 @@ def run_compliance_check(
 
     final_content.append({"type": "text", "text": final_prompt})
 
-    final_response = _call_claude_with_retry(client, final_content, max_tokens=8192)
-    result = _parse_json_response(final_response.content[0].text)
+    # Try up to 2 times if JSON parsing fails
+    for _parse_attempt2 in range(2):
+        final_response = _call_claude_with_retry(client, final_content, max_tokens=8192)
+        try:
+            result = _parse_json_response(final_response.content[0].text)
+            break
+        except (json.JSONDecodeError, ValueError):
+            if _parse_attempt2 == 0:
+                time.sleep(3)
+            else:
+                raise
 
     # --- Phase 3: Generate revision emails (if not approved) ---
     email_ko = ""
