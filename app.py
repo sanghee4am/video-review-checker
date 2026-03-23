@@ -1040,9 +1040,9 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
             all_results[fname] = {"processed_video": pv, "report": report}
         else:
             from concurrent.futures import ThreadPoolExecutor, as_completed
-            progress_bar.progress(30, text=f"영상 {num_videos}개 병렬 검수 중 (2개씩)...")
+            progress_bar.progress(30, text=f"영상 {num_videos}개 병렬 검수 중 (5개씩)...")
             _done = 0
-            with ThreadPoolExecutor(max_workers=2) as executor:
+            with ThreadPoolExecutor(max_workers=5) as executor:
                 futures = {
                     executor.submit(_run_single_review, fname, pv): fname
                     for fname, pv in processed_videos.items()
