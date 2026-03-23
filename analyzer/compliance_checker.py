@@ -567,8 +567,53 @@ def _call_claude_with_retry(client, content, max_tokens=8192, max_retries=5):
                 raise
 
 
+def _fix_unescaped_quotes(text: str) -> str:
+    """Fix unescaped double quotes inside JSON string values.
+
+    Walks char by char: when inside a JSON string, any " that isn't preceded
+    by \\ and doesn't close the string (next non-ws char is not , : } ]) gets
+    escaped to \\".
+    """
+    result = []
+    i = 0
+    in_string = False
+    while i < len(text):
+        ch = text[i]
+        if not in_string:
+            result.append(ch)
+            if ch == '"':
+                in_string = True
+        else:
+            if ch == '\\':
+                # Escaped char — pass through both chars
+                result.append(ch)
+                if i + 1 < len(text):
+                    i += 1
+                    result.append(text[i])
+            elif ch == '"':
+                # Is this the real closing quote?
+                # Look ahead: skip whitespace, check if next char is , : } ]
+                j = i + 1
+                while j < len(text) and text[j] in ' \t\r\n':
+                    j += 1
+                if j >= len(text) or text[j] in ',:]}\n':
+                    # Closing quote
+                    result.append(ch)
+                    in_string = False
+                else:
+                    # Unescaped interior quote — escape it
+                    result.append('\\"')
+            else:
+                result.append(ch)
+        i += 1
+    return ''.join(result)
+
+
 def _parse_json_response(text: str) -> dict:
     """Parse JSON from Claude response, handling markdown wrapping and minor errors."""
+    import logging
+    logger = logging.getLogger(__name__)
+
     text = text.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1]
@@ -582,25 +627,33 @@ def _parse_json_response(text: str) -> dict:
     if start != -1 and end != -1 and end > start:
         text = text[start:end + 1]
 
-    # Try strict parse first
+    # 1. Try strict parse
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
-    # Try lenient parse (allows control chars like raw newlines in strings)
+    # 2. Try lenient (allows control chars in strings)
     try:
         return json.loads(text, strict=False)
     except json.JSONDecodeError:
         pass
 
-    # Fix trailing commas + lenient
+    # 3. Fix trailing commas + lenient
     import re as _re_json
     cleaned = _re_json.sub(r',\s*([}\]])', r'\1', text)
     try:
         return json.loads(cleaned, strict=False)
     except json.JSONDecodeError:
-        raise ValueError(f"AI 응답을 JSON으로 파싱할 수 없습니다. 다시 시도해주세요.\n응답 앞부분: {text[:200]}")
+        pass
+
+    # 4. Fix unescaped quotes inside string values + lenient
+    fixed = _fix_unescaped_quotes(cleaned)
+    try:
+        return json.loads(fixed, strict=False)
+    except json.JSONDecodeError as e:
+        logger.error("JSON parse failed after all fixes. Error: %s\nRaw response (first 500 chars): %s", e, text[:500])
+        raise ValueError(f"AI 응답을 JSON으로 파싱할 수 없습니다. 다시 시도해주세요.\n에러: {e}\n응답 앞부분: {text[:300]}")
 
 
 def run_compliance_check(
