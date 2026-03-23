@@ -709,6 +709,27 @@ with tab1:
                                     _rc_icon = {"fixed": "✅", "partially_fixed": "🟡", "still_pending": "❌"}.get(rc.status, "❓")
                                     st.markdown(f"- {_rc_icon} {rc.item} — {rc.current_finding}")
 
+                            # Editing tips
+                            if report.editing_tips:
+                                st.markdown("**✂️ 캡컷 편집 팁:**")
+                                _cat_names = {
+                                    "font": "폰트/자막", "effect": "효과/이펙트",
+                                    "transition": "전환/트랜지션", "layout": "레이아웃/구도",
+                                    "sfx": "사운드/효과음", "general": "일반 편집",
+                                }
+                                for _et in report.editing_tips:
+                                    _et_cat = _cat_names.get(_et.category, _et.category)
+                                    _et_scene = f" (Scene {_et.scene_number})" if _et.scene_number else ""
+                                    st.markdown(f"**{_et_cat}{_et_scene}**")
+                                    for _t in _et.tip:
+                                        st.markdown(f"- {_t}")
+                                    if _et.capcut_how:
+                                        st.caption(f"📱 CapCut: {_et.capcut_how}")
+                                    if _et.font_names:
+                                        st.caption(f"🔤 추천 폰트: {', '.join(_et.font_names)}")
+                                    if _et.sfx_names:
+                                        st.caption(f"🔊 추천 효과음: {', '.join(_et.sfx_names)}")
+
                         # --- Admin decision buttons on every review ---
                         rev_id = rev["id"]
                         if not md or md == "auto_approved":
