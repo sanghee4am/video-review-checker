@@ -1268,18 +1268,32 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
         st.session_state["review_report"] = all_results[first_key]["report"]
         st.session_state["selected_video"] = first_key
 
-        # Save review history
-        if c_name:
-            for fname, data in all_results.items():
-                rid = db.save_review(campaign_id, c_name, data["report"], current_round)
-                st.session_state["last_review_id"] = rid
-                st.session_state["last_review_campaign"] = campaign_id
-                st.session_state["last_review_creator"] = c_name
+        # Save review history — extract creator name per file if possible
+        import re as _re_save
+        for fname, data in all_results.items():
+            # Try extracting creator from filename (handle_something.mp4)
+            _stem = fname.rsplit(".", 1)[0] if "." in fname else fname
+            if "_" in _stem:
+                _file_creator = _stem.split("_")[0]
+            else:
+                _file_creator = ""
+            _save_name = _file_creator or c_name
+            if not _save_name:
+                continue
 
-        # --- 시트 기입 + 슬랙 알림 (파이프라인과 동일) ---
-        if c_name:
-            last_report = list(all_results.values())[-1]["report"]
-            _try_sheet_and_slack(campaign_id, c_name, last_report)
+            # Draft number per file
+            _dm_save = _re_save.search(r'draft\s*(\d+)', fname, _re_save.IGNORECASE)
+            if not _dm_save:
+                _dm_save = _re_save.search(r'(\d+)\s*차', fname)
+            _file_round = int(_dm_save.group(1)) if _dm_save else current_round
+
+            rid = db.save_review(campaign_id, _save_name, data["report"], _file_round)
+            st.session_state["last_review_id"] = rid
+            st.session_state["last_review_campaign"] = campaign_id
+            st.session_state["last_review_creator"] = _save_name
+
+            # 시트 기입 + 슬랙 알림 (per creator)
+            _try_sheet_and_slack(campaign_id, _save_name, data["report"])
 
         progress_bar.progress(100, text=f"검수 완료! ({num_videos}개 영상)")
         st.session_state["_review_just_completed"] = True
