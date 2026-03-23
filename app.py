@@ -592,276 +592,22 @@ with tab1:
             for idx, sub in enumerate(filtered):
                 sc = sub.get("overall_score", 0)
                 st_icon = status_icons.get(sub.get("overall_status", ""), "❓")
-                ts = sub["created_at"][:16].replace("T", " ") if sub.get("created_at") else ""
+                ts = sub["created_at"][:10] if sub.get("created_at") else ""
 
-                extra_badges = ""
-                if sub.get("admin_decision"):
-                    extra_badges += f" | {decision_labels.get(sub['admin_decision'], sub['admin_decision'])}"
-                if sub.get("brand_feedback"):
-                    extra_badges += " | 💬피드백"
+                ad = sub.get("admin_decision", "")
+                ad_label = decision_labels.get(ad, "⏳대기중") if ad else "⏳대기중"
+
                 cap = sub.get("caption_check_result")
+                cap_badge = ""
                 if cap:
                     cap_ok = cap.get("all_passed", False) if isinstance(cap, dict) else False
-                    extra_badges += " | 🔗캡션✅" if cap_ok else " | 🔗캡션❌"
+                    cap_badge = " 🔗✅" if cap_ok else " 🔗❌"
 
-                col_info, col_btn = st.columns([5, 1])
-                with col_info:
-                    st.markdown(
-                        f"{score_icons(sc)} **{sub.get('creator_name', '알 수 없음')}** — "
-                        f"Round {sub['round']} | 점수: {sc} {st_icon} | {ts}"
-                        f"{extra_badges}"
-                    )
-                with col_btn:
-                    _btn_col1, _btn_col2 = st.columns(2)
-                    with _btn_col1:
-                        if st.button("📊 결과", key=f"result_{idx}", use_container_width=True):
-                            # Load latest review into Tab 2
-                            _cr_name = sub.get("creator_name", "알 수 없음")
-                            _cr_reviews = db.get_creator_reviews(_campaign_id_tab1, _cr_name)
-                            if _cr_reviews:
-                                _latest = _cr_reviews[0]
-                                _loaded_report = ReviewReport.model_validate(_latest["report_json"])
-                                st.session_state["review_report"] = _loaded_report
-                                st.session_state["processed_video"] = None
-                                st.session_state["batch_results"] = {
-                                    f"{_cr_name}_round{_latest.get('round', 1)}": {
-                                        "processed_video": None,
-                                        "report": _loaded_report,
-                                    }
-                                }
-                                st.session_state["selected_video"] = f"{_cr_name}_round{_latest.get('round', 1)}"
-                                st.session_state["_loaded_from_history"] = True
-                                st.toast(f"✅ {_cr_name} 검수 결과 → 검수 결과 탭에서 확인!")
-                                st.rerun()
-                    with _btn_col2:
-                        if st.button("📋 이력", key=f"detail_{idx}", use_container_width=True):
-                            st.session_state["view_creator_detail"] = sub.get("creator_name", "알 수 없음")
-
-            # Show detailed review history for selected creator
-            if "view_creator_detail" in st.session_state:
-                detail_creator = st.session_state["view_creator_detail"]
-                st.markdown(f"---\n#### 📝 {detail_creator} 검수 이력")
-                reviews = db.get_creator_reviews(_campaign_id_tab1, detail_creator)
-                for rev in reviews:
-                    r_sc = rev.get("overall_score", 0)
-                    r_status = status_icons.get(rev.get("overall_status", ""), "❓")
-                    r_ts = rev["created_at"][:16].replace("T", " ") if rev.get("created_at") else ""
-
-                    md = rev.get("admin_decision")
-                    md_badge = f" — {decision_labels.get(md, md)}" if md else ""
-
-                    with st.expander(
-                        f"Round {rev.get('round', 1)} — {r_sc}점 {r_status}{md_badge} ({r_ts})",
-                        expanded=(rev == reviews[0]),
-                    ):
-                        report = ReviewReport.model_validate(rev["report_json"])
-                        # "탭에서 보기" 버튼 — 클릭하면 Tab2/Tab3에 이 리뷰를 로드
-                        if st.button(
-                            f"📊 검수 결과 탭에서 보기",
-                            key=f"load_review_{rev['id']}",
-                            use_container_width=True,
-                        ):
-                            st.session_state["review_report"] = report
-                            st.session_state["processed_video"] = None
-                            st.session_state["batch_results"] = {
-                                f"{detail_creator}_round{rev.get('round', 1)}": {
-                                    "processed_video": None,
-                                    "report": report,
-                                }
-                            }
-                            st.session_state["selected_video"] = f"{detail_creator}_round{rev.get('round', 1)}"
-                            st.session_state["_loaded_from_history"] = True
-                            st.success("✅ 검수 결과 / 편집 팁 탭에서 확인하세요!")
-                            st.rerun()
-                        st.markdown(f"**요약:** {report.summary}")
-
-                        if md:
-                            st.info(
-                                f"**수동 결정:** {decision_labels.get(md, md)}"
-                                + (f"\n메모: {rev['admin_memo']}" if rev.get("admin_memo") else "")
-                            )
-                        if rev.get("brand_feedback"):
-                            st.warning(f"**브랜드 피드백:** {rev['brand_feedback']}")
-
-                        if report.revision_items:
-                            st.markdown("**수정 필요 항목:**")
-                            for item in report.revision_items:
-                                st.markdown(f"- {item}")
-                        if report.manual_review_flags:
-                            st.markdown("**수동 검토 필요:**")
-                            for flag in report.manual_review_flags:
-                                st.markdown(f"- ⚠️ {flag}")
-
-                        # --- Full review detail (same as what creator sees) ---
-                        with st.expander("📄 전체 검수 결과 보기 (크리에이터 뷰)", expanded=False):
-                            # Scene thumbnails (saved in report)
-                            if report.scene_thumbnails:
-                                st.markdown("**🖼️ 장면 스크린샷:**")
-                                _th_cols = st.columns(min(len(report.scene_thumbnails), 4))
-                                for _ti, (_sn, _tb64) in enumerate(report.scene_thumbnails.items()):
-                                    with _th_cols[_ti % len(_th_cols)]:
-                                        import base64 as _b64_hist
-                                        st.image(_b64_hist.b64decode(_tb64), caption=f"Scene {_sn}", use_container_width=True)
-
-                            # Scene reviews
-                            if report.scene_reviews:
-                                st.markdown("**🎬 장면별 검수:**")
-                                for sr in report.scene_reviews:
-                                    _sr_icon = {"pass": "✅", "fail": "❌", "warning": "⚠️"}.get(sr.status, "❓")
-                                    _sr_time = f" ({sr.matched_time_range})" if sr.matched_time_range else ""
-                                    st.markdown(
-                                        f"**{_sr_icon} Scene {sr.scene_number}{_sr_time}** — {sr.guideline_description}"
-                                    )
-                                    # Show thumbnail next to scene if available
-                                    if report.scene_thumbnails and str(sr.scene_number) in report.scene_thumbnails:
-                                        import base64 as _b64_sr
-                                        st.image(
-                                            _b64_sr.b64decode(report.scene_thumbnails[str(sr.scene_number)]),
-                                            width=180,
-                                        )
-                                    if sr.findings:
-                                        st.caption(sr.findings)
-                                    if sr.suggestion:
-                                        st.markdown(f"  → 수정 제안: {sr.suggestion}")
-
-                            # Rule reviews
-                            violated = [r for r in report.rule_reviews if r.status != "compliant"]
-                            compliant = [r for r in report.rule_reviews if r.status == "compliant"]
-                            if violated:
-                                st.markdown("**📌 규칙 위반:**")
-                                for rr in violated:
-                                    _rr_icon = "❌" if rr.status == "violated" else "⚠️"
-                                    st.markdown(f"- {_rr_icon} **{rr.rule_description}**")
-                                    if rr.evidence:
-                                        st.caption(f"  근거: {rr.evidence}")
-                                    if rr.suggestion:
-                                        st.caption(f"  → {rr.suggestion}")
-                            if compliant:
-                                st.markdown(f"**✅ 통과 규칙 ({len(compliant)}건):**")
-                                for rr in compliant:
-                                    st.markdown(f"- ✅ {rr.rule_description}")
-
-                            # Revision comparison (re-review)
-                            if report.revision_comparison:
-                                st.markdown("**🔄 이전 대비 변경사항:**")
-                                for rc in report.revision_comparison:
-                                    _rc_icon = {"fixed": "✅", "partially_fixed": "🟡", "still_pending": "❌"}.get(rc.status, "❓")
-                                    st.markdown(f"- {_rc_icon} {rc.item} — {rc.current_finding}")
-
-                            # Editing tips
-                            if report.editing_tips:
-                                st.markdown("**✂️ 캡컷 편집 팁:**")
-                                _cat_names = {
-                                    "font": "폰트/자막", "effect": "효과/이펙트",
-                                    "transition": "전환/트랜지션", "layout": "레이아웃/구도",
-                                    "sfx": "사운드/효과음", "general": "일반 편집",
-                                }
-                                for _et in report.editing_tips:
-                                    _et_cat = _cat_names.get(_et.category, _et.category)
-                                    _et_scene = f" (Scene {_et.scene_number})" if _et.scene_number else ""
-                                    st.markdown(f"**{_et_cat}{_et_scene}**")
-                                    for _t in _et.tip:
-                                        st.markdown(f"- {_t}")
-                                    if _et.capcut_how:
-                                        st.caption(f"📱 CapCut: {_et.capcut_how}")
-                                    if _et.font_names:
-                                        st.caption(f"🔤 추천 폰트: {', '.join(_et.font_names)}")
-                                    if _et.sfx_names:
-                                        st.caption(f"🔊 추천 효과음: {', '.join(_et.sfx_names)}")
-
-                        # --- Admin decision buttons on every review ---
-                        rev_id = rev["id"]
-                        if not md or md == "auto_approved":
-                            st.markdown("**어드민 수동 결정:**")
-                            d_memo = st.text_input(
-                                "메모 (선택)",
-                                placeholder="판단 근거 입력",
-                                key=f"dmemo_{rev_id}",
-                            )
-                            dc1, dc2, dc3 = st.columns(3)
-                            with dc1:
-                                if st.button("✅ 승인", key=f"dappr_{rev_id}", use_container_width=True):
-                                    db.save_admin_decision(rev_id, "approved", d_memo)
-                                    st.rerun()
-                            with dc2:
-                                if st.button("📝 수정요청", key=f"drev_{rev_id}", use_container_width=True):
-                                    db.save_admin_decision(rev_id, "revision_needed", d_memo)
-                                    st.rerun()
-                            with dc3:
-                                if st.button("❌ 반려", key=f"drej_{rev_id}", use_container_width=True):
-                                    db.save_admin_decision(rev_id, "rejected", d_memo)
-                                    st.rerun()
-
-                        if report.email_draft and md in ("revision_needed", "rejected"):
-                            st.info("⬇️ **크리에이터에게 전달할 수정 안내 메시지입니다.** 복사해서 메신저/이메일로 전달하세요.")
-                            st.text_area(
-                                "이메일 초안 (한국어)",
-                                report.email_draft,
-                                height=120,
-                                key=f"email_draft_{rev_id}",
-                            )
-                            if report.email_draft_en:
-                                st.text_area(
-                                    "이메일 초안 (English)",
-                                    report.email_draft_en,
-                                    height=120,
-                                    key=f"email_draft_en_{rev_id}",
-                                )
-                        elif report.email_draft and not md:
-                            with st.expander("📧 이메일 초안 미리보기"):
-                                st.text_area(
-                                    "이메일 초안",
-                                    report.email_draft,
-                                    height=120,
-                                    key=f"email_draft_{rev_id}",
-                                )
-
-                # --- Brand feedback inline (per creator) ---
-                st.markdown("---")
-                st.markdown(f"**💬 {detail_creator}에게 브랜드 피드백 전달**")
-                _bf_sub = next((s for s in submissions if s["creator_name"] == detail_creator), None)
-                if _bf_sub and _bf_sub.get("brand_feedback"):
-                    st.info(f"**기존 피드백:** {_bf_sub['brand_feedback']}")
-                _bf_text = st.text_area(
-                    "피드백 내용",
-                    placeholder="예: 제품 클로즈업 장면에서 로고가 더 잘 보이도록 수정 요청",
-                    height=100,
-                    key="detail_bf_text",
+                st.markdown(
+                    f"{score_icons(sc)} **{sub.get('creator_name', '?')}** — "
+                    f"{sc}점 {st_icon} | Draft {sub.get('round', 1)} | "
+                    f"{ad_label}{cap_badge} | {ts}"
                 )
-                if st.button("📤 피드백 전달", key="detail_bf_submit", use_container_width=True):
-                    if _bf_text.strip() and _bf_sub:
-                        db.save_brand_feedback(_bf_sub["id"], _bf_text.strip())
-                        st.success(
-                            f"✅ {detail_creator}에게 피드백이 전달되었습니다.\n\n"
-                            f"📌 **다음 단계:** 크리에이터 상태가 '수정필요'로 변경되었습니다. "
-                            f"크리에이터가 수정 후 재제출하면, 재검수 시 이 피드백이 AI에 자동 반영됩니다."
-                        )
-                        st.rerun()
-                    elif not _bf_text.strip():
-                        st.warning("피드백 내용을 입력해주세요.")
-
-                _detail_col1, _detail_col2 = st.columns(2)
-                with _detail_col1:
-                    if st.button("✕ 닫기", key="close_detail", use_container_width=True):
-                        del st.session_state["view_creator_detail"]
-                        st.rerun()
-                with _detail_col2:
-                    _latest_sub = next((s for s in submissions if s["creator_name"] == detail_creator), None)
-                    _needs_review = _latest_sub and (
-                        _latest_sub.get("admin_decision") == "revision_needed"
-                        or _latest_sub.get("brand_feedback")
-                        or not _latest_sub.get("admin_decision")
-                    )
-                    if _needs_review:
-                        if st.button(
-                            f"🔍 {detail_creator} 재검수하기",
-                            key="review_this_creator",
-                            use_container_width=True,
-                            type="primary",
-                        ):
-                            st.session_state["_prefill_creator_name"] = detail_creator
-                            st.toast(f"사이드바에 '{detail_creator}' 이름이 설정되었습니다. 영상을 업로드하고 검수를 시작하세요.")
-                            st.rerun()
 
         else:
             st.caption("아직 제출한 크리에이터가 없습니다.")
@@ -945,31 +691,7 @@ with tab1:
                 st.info("제출한 크리에이터가 없어 피드백을 전달할 대상이 없습니다.")
 
         # ============================================================
-        # SECTION 4: 검수 이력
-        # ============================================================
-        history = db.list_reviews(_campaign_id_tab1)
-        if history:
-            with st.expander(f"📋 전체 검수 이력 ({len(history)}건)", expanded=False):
-                _decision_map = {
-                    "approved": "✅수동승인",
-                    "auto_approved": "🤖자동승인",
-                    "rejected": "❌수동반려",
-                    "revision_needed": "📝수동수정요청",
-                }
-                for h in history[:20]:
-                    score = h.get("overall_score", 0)
-                    score_color = "🟢" if score >= 80 else ("🟡" if score >= 60 else "🔴")
-                    status_icon = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}.get(h.get("overall_status", ""), "❓")
-                    ts = h["created_at"][:16].replace("T", " ") if h.get("created_at") else ""
-                    ad = h.get("admin_decision")
-                    ad_badge = f" | {_decision_map.get(ad, '')}" if ad else ""
-                    st.markdown(
-                        f"- {score_color} **{h['creator_name']}** — Round {h['round']} | "
-                        f"점수: {score} {status_icon}{ad_badge} | {ts}"
-                    )
-
-        # ============================================================
-        # SECTION 5: 가이드라인 상세 (접힘)
+        # SECTION 4: 가이드라인 상세 (접힘)
         # ============================================================
         st.divider()
         with st.expander(f"📋 가이드라인 상세 — {g.title or g.product_name}", expanded=False):
@@ -1434,544 +1156,522 @@ def _get_scene_frames_html(time_range: str, processed_video, status: str = "") -
     return _build_evidence_frames_html(timestamps, processed_video, status)
 
 
-# ===== Tab 2: Review Results (main dashboard) =====
-with tab2:
-    if "review_report" in st.session_state:
-        report: ReviewReport = st.session_state["review_report"]
-        _pv = st.session_state.get("processed_video")
+# ===== Tab 2 Helper: render a single review report =====
+def _render_review_report(report: ReviewReport, review_id: int | None = None, key_prefix: str = ""):
+    """Render a full review report inside any container (expander, tab, etc.).
 
-        if st.session_state.get("_loaded_from_history"):
-            st.info("📂 저장된 검수 이력을 불러왔습니다. (Tab 1에서 다른 이력도 선택할 수 있습니다)")
+    Uses report.scene_thumbnails for frames (no live processed_video needed).
+    key_prefix: unique prefix for Streamlit widget keys to avoid conflicts.
+    """
+    import base64 as _b64_render
+    import re as _re_render
 
-        # --- Batch video selector (if multiple) ---
-        if "batch_results" in st.session_state and len(st.session_state["batch_results"]) > 1:
-            batch_results = st.session_state["batch_results"]
-            video_names = list(batch_results.keys())
+    score = report.overall_score
+    score_class = "hero-score-high" if score >= 90 else ("hero-score-mid" if score >= 60 else "hero-score-low")
 
-            # Batch summary cards
-            cols = st.columns(min(len(video_names), 5))
-            for i, vname in enumerate(video_names):
-                r = batch_results[vname]["report"]
-                col = cols[i % len(cols)]
-                score = r.overall_score
-                color = "#22c55e" if score >= 80 else ("#f59e0b" if score >= 60 else "#ef4444")
-                status_icon = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}.get(r.overall_status, "❓")
-                is_sel = "batch-card-selected" if vname == st.session_state.get("selected_video") else ""
-                col.markdown(
-                    f'<div class="batch-card {is_sel}">'
-                    f'<div class="bc-name">{vname}</div>'
-                    f'<div class="bc-score" style="color:{color};">{score}</div>'
-                    f'<div class="bc-status">{status_icon} {r.overall_status.replace("_", " ")}</div>'
+    _display_status = report.overall_status
+    if score < 90 and _display_status == "approved":
+        _display_status = "revision_needed"
+
+    status_labels = {
+        "approved": "✅ 승인 — 수정 없이 게시 가능",
+        "revision_needed": "📝 수정 필요 — 아래 항목 확인 후 재촬영/편집",
+        "rejected": "❌ 반려 — 가이드라인 재확인 필요",
+    }
+    status_label = status_labels.get(_display_status, "❓ 미정")
+
+    s_pass = sum(1 for s in report.scene_reviews if s.status == "pass")
+    s_fail = sum(1 for s in report.scene_reviews if s.status == "fail")
+    s_warn = sum(1 for s in report.scene_reviews if s.status == "warning")
+    n_violated = sum(1 for r in report.rule_reviews if r.status == "violated")
+    n_manual = len(report.manual_review_flags)
+
+    st.markdown(
+        f'<div class="hero-card">'
+        f'<div class="hero-score {score_class}">{score}</div>'
+        f'<div class="hero-info">'
+        f'<div class="hero-status">{status_label}</div>'
+        f'<div class="hero-summary">{report.summary}</div>'
+        f'<div class="hero-stats">'
+        f'<div class="hero-stat">장면 <b>✅{s_pass}</b> ❌{s_fail} ⚠️{s_warn}</div>'
+        f'<div class="hero-stat">규칙 위반 <b>{n_violated}건</b></div>'
+        f'<div class="hero-stat">수동 확인 <b>{n_manual}건</b></div>'
+        f'</div></div></div>',
+        unsafe_allow_html=True,
+    )
+
+    # --- Issues: violations + manual flags ---
+    has_issues = (n_violated > 0 or s_fail > 0 or s_warn > 0 or n_manual > 0)
+
+    if has_issues:
+        st.markdown("### 🚨 수정 필요 항목")
+
+        problem_scenes = [sr for sr in report.scene_reviews if sr.status in ("fail", "warning")]
+        if problem_scenes:
+            for sr in problem_scenes:
+                status = sr.status
+                icon = "❌" if status == "fail" else "⚠️"
+                badge_class = f"scene-badge-{status}"
+                card_class = f"scene-card-{status}"
+
+                # Use saved thumbnails only (no live processed_video)
+                frames_html = ""
+                if report.scene_thumbnails:
+                    _sn_key = str(sr.scene_number)
+                    if _sn_key in report.scene_thumbnails:
+                        frames_html = (
+                            f'<div class="evidence-frames">'
+                            f'<div class="evidence-frame evidence-frame-{status}">'
+                            f'<img src="data:image/jpeg;base64,{report.scene_thumbnails[_sn_key]}" />'
+                            f'</div></div>'
+                        )
+
+                suggestion_html = ""
+                if sr.suggestion:
+                    suggestion_html = (
+                        f'<div class="scene-suggestion">'
+                        f'<div class="scene-suggestion-label">수정 제안</div>'
+                        f'{sr.suggestion}</div>'
+                    )
+
+                st.markdown(
+                    f'<div class="scene-card {card_class}">'
+                    f'<div class="scene-header">'
+                    f'<div class="scene-badge {badge_class}">{icon}</div>'
+                    f'<div class="scene-title">Scene {sr.scene_number}</div>'
+                    f'<div class="scene-time">{sr.matched_time_range or ""}</div>'
+                    f'</div>'
+                    f'<div class="scene-body">'
+                    f'{frames_html}'
+                    f'<div class="guideline-label">가이드라인 요구사항</div>'
+                    f'<div class="guideline-text">{sr.guideline_description}</div>'
+                    f'<div class="findings-text">{sr.findings}</div>'
+                    f'{suggestion_html}'
+                    f'</div></div>',
+                    unsafe_allow_html=True,
+                )
+
+        violated = [r for r in report.rule_reviews if r.status == "violated"]
+        if violated:
+            st.markdown("#### 규칙 위반")
+            for r in violated:
+                st.markdown(
+                    f'<div class="rule-card rule-violated">'
+                    f'<span class="rule-cat">{r.rule_category}</span>'
+                    f'<span class="rule-desc">{r.rule_description}</span>'
+                    f'<div class="rule-evidence">근거: {r.evidence}</div>'
+                    f'<div class="rule-suggestion">💡 {r.suggestion}</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
-            selected = st.selectbox(
-                "영상 선택",
-                video_names,
-                index=video_names.index(st.session_state.get("selected_video", video_names[0])),
-                key="video_selector",
-                label_visibility="collapsed",
-            )
-            if selected != st.session_state.get("selected_video"):
-                st.session_state["selected_video"] = selected
-                st.session_state["review_report"] = batch_results[selected]["report"]
-                st.session_state["processed_video"] = batch_results[selected]["processed_video"]
-                st.rerun()
-
-        # --- Hero Score Card ---
-        score = report.overall_score
-        score_class = "hero-score-high" if score >= 90 else ("hero-score-mid" if score >= 60 else "hero-score-low")
-
-        # 90점 미만이면 AI가 approved라 해도 revision_needed로 강제
-        _display_status = report.overall_status
-        if score < 90 and _display_status == "approved":
-            _display_status = "revision_needed"
-
-        status_labels = {
-            "approved": "✅ 승인 — 수정 없이 게시 가능",
-            "revision_needed": "📝 수정 필요 — 아래 항목 확인 후 재촬영/편집",
-            "rejected": "❌ 반려 — 가이드라인 재확인 필요",
-        }
-        status_label = status_labels.get(_display_status, "❓ 미정")
-
-        # Stats
-        s_pass = sum(1 for s in report.scene_reviews if s.status == "pass")
-        s_fail = sum(1 for s in report.scene_reviews if s.status == "fail")
-        s_warn = sum(1 for s in report.scene_reviews if s.status == "warning")
-        n_violated = sum(1 for r in report.rule_reviews if r.status == "violated")
-        n_manual = len(report.manual_review_flags)
-
-        fname_html = ""
-        if st.session_state.get("selected_video"):
-            fname_html = f'<div class="hero-filename">📁 {st.session_state["selected_video"]}</div>'
-
-        st.markdown(
-            f'<div class="hero-card">'
-            f'<div class="hero-score {score_class}">{score}</div>'
-            f'<div class="hero-info">'
-            f'{fname_html}'
-            f'<div class="hero-status">{status_label}</div>'
-            f'<div class="hero-summary">{report.summary}</div>'
-            f'<div class="hero-stats">'
-            f'<div class="hero-stat">장면 <b>✅{s_pass}</b> ❌{s_fail} ⚠️{s_warn}</div>'
-            f'<div class="hero-stat">규칙 위반 <b>{n_violated}건</b></div>'
-            f'<div class="hero-stat">수동 확인 <b>{n_manual}건</b></div>'
-            f'</div></div></div>',
-            unsafe_allow_html=True,
-        )
-
-        # --- Issues first: violations + manual flags ---
-        has_issues = (n_violated > 0 or s_fail > 0 or s_warn > 0 or n_manual > 0)
-
-        if has_issues:
-            st.markdown("### 🚨 수정 필요 항목")
-
-            # Failed/warning scenes first
-            problem_scenes = [sr for sr in report.scene_reviews if sr.status in ("fail", "warning")]
-            if problem_scenes:
-                for sr in problem_scenes:
-                    status = sr.status
-                    icon = "❌" if status == "fail" else "⚠️"
-                    badge_class = f"scene-badge-{status}"
-                    card_class = f"scene-card-{status}"
-
-                    frames_html = _get_scene_frames_html(sr.matched_time_range, _pv, status)
-                    finding_ts = _extract_timestamps(sr.findings)
-                    finding_frames = _build_evidence_frames_html(finding_ts, _pv, status)
-
-                    suggestion_html = ""
-                    if sr.suggestion:
-                        suggestion_html = (
-                            f'<div class="scene-suggestion">'
-                            f'<div class="scene-suggestion-label">수정 제안</div>'
-                            f'{sr.suggestion}</div>'
-                        )
-
-                    st.markdown(
-                        f'<div class="scene-card {card_class}">'
-                        f'<div class="scene-header">'
-                        f'<div class="scene-badge {badge_class}">{icon}</div>'
-                        f'<div class="scene-title">Scene {sr.scene_number}</div>'
-                        f'<div class="scene-time">{sr.matched_time_range or ""}</div>'
-                        f'</div>'
-                        f'<div class="scene-body">'
-                        f'{frames_html}'
-                        f'<div class="guideline-label">가이드라인 요구사항</div>'
-                        f'<div class="guideline-text">{sr.guideline_description}</div>'
-                        f'<div class="findings-text">{sr.findings}</div>'
-                        f'{finding_frames if finding_frames != frames_html else ""}'
-                        f'{suggestion_html}'
-                        f'</div></div>',
-                        unsafe_allow_html=True,
-                    )
-
-            # Rule violations
-            violated = [r for r in report.rule_reviews if r.status == "violated"]
-            if violated:
-                st.markdown("#### 규칙 위반")
-                for r in violated:
-                    evidence_ts = _extract_timestamps(r.evidence)
-                    evidence_html = _build_evidence_frames_html(evidence_ts, _pv, "fail")
-                    st.markdown(
-                        f'<div class="rule-card rule-violated">'
-                        f'<span class="rule-cat">{r.rule_category}</span>'
-                        f'<span class="rule-desc">{r.rule_description}</span>'
-                        f'<div class="rule-evidence">근거: {r.evidence}</div>'
-                        f'{evidence_html}'
-                        f'<div class="rule-suggestion">💡 {r.suggestion}</div>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-
-            # Unclear rules
-            unclear = [r for r in report.rule_reviews if r.status == "unclear"]
-            if unclear:
-                st.markdown("#### 확인 필요 규칙")
-                for r in unclear:
-                    evidence_ts = _extract_timestamps(r.evidence)
-                    evidence_html = _build_evidence_frames_html(evidence_ts, _pv, "warning")
-                    st.markdown(
-                        f'<div class="rule-card rule-unclear">'
-                        f'<span class="rule-cat">{r.rule_category}</span>'
-                        f'<span class="rule-desc">{r.rule_description}</span>'
-                        f'<div class="rule-evidence">{r.evidence}</div>'
-                        f'{evidence_html}'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-
-            # Manual review flags
-            if report.manual_review_flags:
-                st.markdown("#### 👁️ 수동 확인 필요")
-                for flag in report.manual_review_flags:
-                    flag_ts = _extract_timestamps(flag)
-                    flag_frames = _build_evidence_frames_html(flag_ts, _pv, "warning")
-                    st.markdown(
-                        f'<div class="manual-flag">🔍 {flag}{flag_frames}</div>',
-                        unsafe_allow_html=True,
-                    )
-
-            # --- Revision Comparison (re-review) ---
-            if report.revision_comparison:
-                st.markdown("### 🔄 이전 검수 대비 변경사항")
-                st.markdown(f"**Review Round {report.review_round}**")
-
-                comp_fixed = [c for c in report.revision_comparison if c.status == "fixed"]
-                comp_partial = [c for c in report.revision_comparison if c.status == "partially_fixed"]
-                comp_pending = [c for c in report.revision_comparison if c.status == "still_pending"]
-
-                if comp_fixed:
-                    st.markdown(f"**✅ 수정 완료 ({len(comp_fixed)}건)**")
-                    for c in comp_fixed:
-                        st.markdown(f"- ✅ ~~{c.item}~~")
-
-                if comp_partial:
-                    st.markdown(f"**🟡 부분 수정 ({len(comp_partial)}건)**")
-                    for c in comp_partial:
-                        st.markdown(f"- 🟡 {c.item}")
-                        if c.current_finding:
-                            st.caption(f"   현재: {c.current_finding[:100]}")
-
-                if comp_pending:
-                    st.markdown(f"**❌ 아직 미수정 ({len(comp_pending)}건)**")
-                    for c in comp_pending:
-                        st.markdown(f"- ❌ {c.item}")
-                        if c.previous_finding:
-                            st.caption(f"   이전 지적: {c.previous_finding[:100]}")
-
-                st.divider()
-
-            st.divider()
-
-            # --- Revision email (Korean + English tabs, collapsed) ---
-            with st.expander("✉️ 수정 안내 이메일 초안", expanded=False):
-                if report.revision_items:
-                    st.markdown("**수정 항목 요약:**")
-                    for i, item in enumerate(report.revision_items, 1):
-                        st.markdown(f"{i}. {item}")
-                    st.markdown("")
-
-                email_tab_ko, email_tab_en = st.tabs(["🇰🇷 한국어", "🇺🇸 English"])
-
-                with email_tab_ko:
-                    email_text_ko = st.text_area(
-                        "한국어 메일 (편집 가능)",
-                        value=report.email_draft,
-                        height=350,
-                        key="email_draft_ko",
-                    )
-                    col_ko1, col_ko2, _ = st.columns([1, 1, 2])
-                    with col_ko1:
-                        st.download_button(
-                            label="📥 한국어 메일 다운로드",
-                            data=email_text_ko,
-                            file_name="revision_request_ko.txt",
-                            mime="text/plain",
-                            use_container_width=True,
-                        )
-                    with col_ko2:
-                        if st.button("📋 복사", key="copy_email_ko", use_container_width=True):
-                            st.components.v1.html(
-                                f'<script>navigator.clipboard.writeText({json.dumps(email_text_ko)});</script>',
-                                height=0,
-                            )
-                            st.toast("클립보드에 복사되었습니다!")
-
-                with email_tab_en:
-                    email_en_value = report.email_draft_en if report.email_draft_en else "(영어 버전이 생성되지 않았습니다. 검수를 다시 실행해주세요.)"
-                    email_text_en = st.text_area(
-                        "English email (editable)",
-                        value=email_en_value,
-                        height=350,
-                        key="email_draft_en",
-                    )
-                    col_en1, col_en2, _ = st.columns([1, 1, 2])
-                    with col_en1:
-                        st.download_button(
-                            label="📥 Download English email",
-                            data=email_text_en,
-                            file_name="revision_request_en.txt",
-                            mime="text/plain",
-                            use_container_width=True,
-                        )
-                    with col_en2:
-                        if st.button("📋 Copy", key="copy_email_en", use_container_width=True):
-                            st.components.v1.html(
-                                f'<script>navigator.clipboard.writeText({json.dumps(email_text_en)});</script>',
-                                height=0,
-                            )
-                            st.toast("Copied to clipboard!")
-
-        # --- Admin Manual Decision (always visible) ---
-        _rid = st.session_state.get("last_review_id")
-        if _rid:
-            st.markdown("### ⚖️ 어드민 최종 결정")
-            manual_memo = st.text_input(
-                "메모 (선택)",
-                placeholder="판단 근거를 입력하세요",
-                key="manual_decision_memo",
-            )
-            col_approve, col_revision, col_reject = st.columns(3)
-            with col_approve:
-                if st.button("✅ 승인", key="manual_approve", use_container_width=True):
-                    db.save_admin_decision(_rid, "approved", manual_memo)
-                    st.success("✅ 승인 처리되었습니다.")
-                    st.rerun()
-            with col_revision:
-                if st.button("📝 수정 필요", key="manual_revision", use_container_width=True):
-                    db.save_admin_decision(_rid, "revision_needed", manual_memo)
-                    st.warning("📝 수정 필요로 처리되었습니다.")
-                    st.rerun()
-            with col_reject:
-                if st.button("❌ 반려", key="manual_reject", use_container_width=True, type="primary"):
-                    db.save_admin_decision(_rid, "rejected", manual_memo)
-                    st.error("❌ 반려 처리되었습니다.")
-                    st.rerun()
-            st.divider()
-
-        # --- Passed scenes (collapsible) ---
-        passed_scenes = [sr for sr in report.scene_reviews if sr.status == "pass"]
-        if passed_scenes:
-            with st.expander(f"✅ 통과 장면 ({len(passed_scenes)}개)", expanded=False):
-                for sr in passed_scenes:
-                    frames_html = _get_scene_frames_html(sr.matched_time_range, _pv, "pass")
-                    st.markdown(
-                        f'<div class="scene-card scene-card-pass">'
-                        f'<div class="scene-header">'
-                        f'<div class="scene-badge scene-badge-pass">✅</div>'
-                        f'<div class="scene-title">Scene {sr.scene_number}</div>'
-                        f'<div class="scene-time">{sr.matched_time_range or ""}</div>'
-                        f'</div>'
-                        f'<div class="scene-body">'
-                        f'{frames_html}'
-                        f'<div class="guideline-label">가이드라인</div>'
-                        f'<div class="guideline-text">{sr.guideline_description}</div>'
-                        f'<div class="findings-text">{sr.findings}</div>'
-                        f'</div></div>',
-                        unsafe_allow_html=True,
-                    )
-
-        # --- Compliant rules (collapsible) ---
-        compliant = [r for r in report.rule_reviews if r.status == "compliant"]
-        if compliant:
-            with st.expander(f"✅ 준수 규칙 ({len(compliant)}개)", expanded=False):
-                for r in compliant:
-                    st.markdown(f"- ✅ **[{r.rule_category}]** {r.rule_description}")
-
-        # --- Mandatory Check ---
-        if report.mandatory_check:
-            with st.expander("📎 필수 요소 체크", expanded=False):
-                items_html = []
-                for elem, checked in report.mandatory_check.items():
-                    icon = "✅" if checked else "❌"
-                    cls = "" if checked else " mandatory-item-fail"
-                    items_html.append(
-                        f'<div class="mandatory-item{cls}">{icon} {elem}</div>'
-                    )
+        unclear = [r for r in report.rule_reviews if r.status == "unclear"]
+        if unclear:
+            st.markdown("#### 확인 필요 규칙")
+            for r in unclear:
                 st.markdown(
-                    f'<div class="mandatory-grid">{"".join(items_html)}</div>',
+                    f'<div class="rule-card rule-unclear">'
+                    f'<span class="rule-cat">{r.rule_category}</span>'
+                    f'<span class="rule-desc">{r.rule_description}</span>'
+                    f'<div class="rule-evidence">{r.evidence}</div>'
+                    f'</div>',
                     unsafe_allow_html=True,
                 )
 
-        # --- Previous round results (auto-display) ---
-        _prev_creator = st.session_state.get("last_review_creator", "")
-        _prev_campaign = st.session_state.get("last_review_campaign", "")
-        if _prev_creator and _prev_campaign:
-            _prev_reviews = db.get_creator_reviews(_prev_campaign, _prev_creator)
-            # Show older rounds (skip latest which is already displayed above)
-            _older = [r for r in _prev_reviews if r.get("id") != st.session_state.get("last_review_id")]
-            if _older:
-                st.divider()
-                st.markdown(f"### 📂 이전 검수 이력 ({_prev_creator})")
-                for _prev_rev in _older:
-                    _pr_sc = _prev_rev.get("overall_score", 0)
-                    _pr_round = _prev_rev.get("round", 1)
-                    _pr_ts = _prev_rev["created_at"][:16].replace("T", " ") if _prev_rev.get("created_at") else ""
-                    _pr_status = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}.get(
-                        _prev_rev.get("overall_status", ""), "❓"
+        if report.manual_review_flags:
+            st.markdown("#### 👁️ 수동 확인 필요")
+            for flag in report.manual_review_flags:
+                st.markdown(
+                    f'<div class="manual-flag">🔍 {flag}</div>',
+                    unsafe_allow_html=True,
+                )
+
+        # Revision Comparison
+        if report.revision_comparison:
+            st.markdown("### 🔄 이전 검수 대비 변경사항")
+            st.markdown(f"**Review Round {report.review_round}**")
+
+            comp_fixed = [c for c in report.revision_comparison if c.status == "fixed"]
+            comp_partial = [c for c in report.revision_comparison if c.status == "partially_fixed"]
+            comp_pending = [c for c in report.revision_comparison if c.status == "still_pending"]
+
+            if comp_fixed:
+                st.markdown(f"**✅ 수정 완료 ({len(comp_fixed)}건)**")
+                for c in comp_fixed:
+                    st.markdown(f"- ✅ ~~{c.item}~~")
+            if comp_partial:
+                st.markdown(f"**🟡 부분 수정 ({len(comp_partial)}건)**")
+                for c in comp_partial:
+                    st.markdown(f"- 🟡 {c.item}")
+                    if c.current_finding:
+                        st.caption(f"   현재: {c.current_finding[:100]}")
+            if comp_pending:
+                st.markdown(f"**❌ 아직 미수정 ({len(comp_pending)}건)**")
+                for c in comp_pending:
+                    st.markdown(f"- ❌ {c.item}")
+                    if c.previous_finding:
+                        st.caption(f"   이전 지적: {c.previous_finding[:100]}")
+
+            st.divider()
+
+        st.divider()
+
+        # Revision email (collapsed)
+        with st.expander("✉️ 수정 안내 이메일 초안", expanded=False):
+            if report.revision_items:
+                st.markdown("**수정 항목 요약:**")
+                for i, item in enumerate(report.revision_items, 1):
+                    st.markdown(f"{i}. {item}")
+                st.markdown("")
+
+            email_tab_ko, email_tab_en = st.tabs(["🇰🇷 한국어", "🇺🇸 English"])
+            with email_tab_ko:
+                email_text_ko = st.text_area(
+                    "한국어 메일 (편집 가능)",
+                    value=report.email_draft,
+                    height=350,
+                    key=f"{key_prefix}_email_ko",
+                )
+                col_ko1, col_ko2, _ = st.columns([1, 1, 2])
+                with col_ko1:
+                    st.download_button(
+                        label="📥 한국어 메일 다운로드",
+                        data=email_text_ko,
+                        file_name="revision_request_ko.txt",
+                        mime="text/plain",
+                        use_container_width=True,
+                        key=f"{key_prefix}_dl_ko",
                     )
-                    _pr_color = "#22c55e" if _pr_sc >= 80 else ("#f59e0b" if _pr_sc >= 60 else "#ef4444")
-                    _pr_label = f"Draft {_pr_round}" if _pr_round else f"Round {_pr_round}"
+                with col_ko2:
+                    if st.button("📋 복사", key=f"{key_prefix}_cp_ko", use_container_width=True):
+                        st.components.v1.html(
+                            f'<script>navigator.clipboard.writeText({json.dumps(email_text_ko)});</script>',
+                            height=0,
+                        )
+                        st.toast("클립보드에 복사되었습니다!")
+            with email_tab_en:
+                email_en_value = report.email_draft_en if report.email_draft_en else "(영어 버전이 생성되지 않았습니다.)"
+                email_text_en = st.text_area(
+                    "English email (editable)",
+                    value=email_en_value,
+                    height=350,
+                    key=f"{key_prefix}_email_en",
+                )
+                col_en1, col_en2, _ = st.columns([1, 1, 2])
+                with col_en1:
+                    st.download_button(
+                        label="📥 Download English email",
+                        data=email_text_en,
+                        file_name="revision_request_en.txt",
+                        mime="text/plain",
+                        use_container_width=True,
+                        key=f"{key_prefix}_dl_en",
+                    )
+                with col_en2:
+                    if st.button("📋 Copy", key=f"{key_prefix}_cp_en", use_container_width=True):
+                        st.components.v1.html(
+                            f'<script>navigator.clipboard.writeText({json.dumps(email_text_en)});</script>',
+                            height=0,
+                        )
+                        st.toast("Copied to clipboard!")
 
-                    with st.expander(
-                        f"{_pr_label} — {_pr_sc}점 {_pr_status} ({_pr_ts})",
-                        expanded=len(_older) == 1,
-                    ):
-                        _pr_report = ReviewReport.model_validate(_prev_rev["report_json"])
-                        st.markdown(f"**요약:** {_pr_report.summary}")
+    # --- Admin Manual Decision ---
+    if review_id:
+        st.markdown("### ⚖️ 어드민 최종 결정")
+        manual_memo = st.text_input(
+            "메모 (선택)",
+            placeholder="판단 근거를 입력하세요",
+            key=f"{key_prefix}_memo",
+        )
+        col_approve, col_revision, col_reject = st.columns(3)
+        with col_approve:
+            if st.button("✅ 승인", key=f"{key_prefix}_approve", use_container_width=True):
+                db.save_admin_decision(review_id, "approved", manual_memo)
+                st.success("✅ 승인 처리되었습니다.")
+                st.rerun()
+        with col_revision:
+            if st.button("📝 수정 필요", key=f"{key_prefix}_revision", use_container_width=True):
+                db.save_admin_decision(review_id, "revision_needed", manual_memo)
+                st.warning("📝 수정 필요로 처리되었습니다.")
+                st.rerun()
+        with col_reject:
+            if st.button("❌ 반려", key=f"{key_prefix}_reject", use_container_width=True, type="primary"):
+                db.save_admin_decision(review_id, "rejected", manual_memo)
+                st.error("❌ 반려 처리되었습니다.")
+                st.rerun()
+        st.divider()
 
-                        # Scene issues
-                        _pr_issues = [s for s in _pr_report.scene_reviews if s.status in ("fail", "warning")]
-                        if _pr_issues:
-                            st.markdown("**수정 필요 항목:**")
-                            for _pr_sr in _pr_issues:
-                                _icon = "❌" if _pr_sr.status == "fail" else "⚠️"
-                                _time = f" ({_pr_sr.matched_time_range})" if _pr_sr.matched_time_range else ""
-                                st.markdown(f"- {_icon} Scene {_pr_sr.scene_number}{_time}: {_pr_sr.findings[:200]}")
+    # --- Passed scenes (collapsible) ---
+    passed_scenes = [sr for sr in report.scene_reviews if sr.status == "pass"]
+    if passed_scenes:
+        with st.expander(f"✅ 통과 장면 ({len(passed_scenes)}개)", expanded=False):
+            for sr in passed_scenes:
+                frames_html = ""
+                if report.scene_thumbnails and str(sr.scene_number) in report.scene_thumbnails:
+                    frames_html = (
+                        f'<div class="evidence-frames">'
+                        f'<div class="evidence-frame evidence-frame-pass">'
+                        f'<img src="data:image/jpeg;base64,{report.scene_thumbnails[str(sr.scene_number)]}" />'
+                        f'</div></div>'
+                    )
+                st.markdown(
+                    f'<div class="scene-card scene-card-pass">'
+                    f'<div class="scene-header">'
+                    f'<div class="scene-badge scene-badge-pass">✅</div>'
+                    f'<div class="scene-title">Scene {sr.scene_number}</div>'
+                    f'<div class="scene-time">{sr.matched_time_range or ""}</div>'
+                    f'</div>'
+                    f'<div class="scene-body">'
+                    f'{frames_html}'
+                    f'<div class="guideline-label">가이드라인</div>'
+                    f'<div class="guideline-text">{sr.guideline_description}</div>'
+                    f'<div class="findings-text">{sr.findings}</div>'
+                    f'</div></div>',
+                    unsafe_allow_html=True,
+                )
 
-                        # Thumbnails from saved report
-                        if _pr_report.scene_thumbnails:
-                            _thumb_cols = st.columns(min(len(_pr_report.scene_thumbnails), 6))
-                            for _ti, (_sn, _tb64) in enumerate(_pr_report.scene_thumbnails.items()):
-                                with _thumb_cols[_ti % len(_thumb_cols)]:
-                                    st.image(
-                                        f"data:image/jpeg;base64,{_tb64}",
-                                        caption=f"Scene {_sn}",
-                                        use_container_width=True,
-                                    )
+    # --- Compliant rules ---
+    compliant = [r for r in report.rule_reviews if r.status == "compliant"]
+    if compliant:
+        with st.expander(f"✅ 준수 규칙 ({len(compliant)}개)", expanded=False):
+            for r in compliant:
+                st.markdown(f"- ✅ **[{r.rule_category}]** {r.rule_description}")
 
-                        if _prev_rev.get("admin_decision"):
-                            _ad_labels = {"approved": "✅ 승인", "auto_approved": "🤖 자동승인",
-                                         "revision_needed": "📝 수정요청", "rejected": "❌ 반려"}
-                            st.info(f"**결정:** {_ad_labels.get(_prev_rev['admin_decision'], _prev_rev['admin_decision'])}")
-                        if _prev_rev.get("brand_feedback"):
-                            st.warning(f"**브랜드 피드백:** {_prev_rev['brand_feedback']}")
+    # --- Mandatory Check ---
+    if report.mandatory_check:
+        with st.expander("📎 필수 요소 체크", expanded=False):
+            items_html = []
+            for elem, checked in report.mandatory_check.items():
+                icon = "✅" if checked else "❌"
+                cls = "" if checked else " mandatory-item-fail"
+                items_html.append(
+                    f'<div class="mandatory-item{cls}">{icon} {elem}</div>'
+                )
+            st.markdown(
+                f'<div class="mandatory-grid">{"".join(items_html)}</div>',
+                unsafe_allow_html=True,
+            )
 
-        # ===== Editing Tips (integrated) =====
+    # --- Editing Tips ---
+    if report.editing_tips:
         st.divider()
         st.markdown("### ✂️ 캡컷 편집 팁")
-        import base64 as _b64_tips
-        import re as _re_tips
 
-        if report.editing_tips:
-            category_names = {
-                "font": "폰트/자막",
-                "effect": "효과/이펙트",
-                "transition": "전환/트랜지션",
-                "layout": "레이아웃/구도",
-                "sfx": "사운드/효과음",
-                "general": "일반 편집",
-            }
+        category_names = {
+            "font": "폰트/자막",
+            "effect": "효과/이펙트",
+            "transition": "전환/트랜지션",
+            "layout": "레이아웃/구도",
+            "sfx": "사운드/효과음",
+            "general": "일반 편집",
+        }
 
-            # --- Build scene→thumbnail mapping: saved in report first, fallback to session ---
-            scene_thumbs = {int(k): v for k, v in report.scene_thumbnails.items()} if report.scene_thumbnails else {}
-            if not scene_thumbs:
-                processed_video = st.session_state.get("processed_video")
-                if processed_video and report.scene_reviews:
-                    for sr in report.scene_reviews:
-                        m = _re_tips.search(r"([\d.]+)\s*[-~]\s*([\d.]+)", sr.matched_time_range or "")
-                        if m:
-                            t_mid = (float(m.group(1)) + float(m.group(2))) / 2
-                        else:
-                            continue
-                        if processed_video.frames:
-                            best_frame = min(
-                                processed_video.frames,
-                                key=lambda f: abs(f.timestamp - t_mid),
-                            )
-                            scene_thumbs[sr.scene_number] = _b64_tips.b64encode(
-                                best_frame.image_bytes
-                            ).decode("utf-8")
+        scene_thumbs = {int(k): v for k, v in report.scene_thumbnails.items()} if report.scene_thumbnails else {}
 
-            # --- Build table HTML ---
-            html = ['<div class="tips-wrap"><table class="tips-table">']
-            html.append(
-                "<thead><tr>"
-                "<th>장면</th>"
-                "<th>카테고리</th>"
-                "<th>편집 팁</th>"
-                "<th>캡컷 폰트</th>"
-                "<th>캡컷 SFX</th>"
-                "</tr></thead><tbody>"
+        html = ['<div class="tips-wrap"><table class="tips-table">']
+        html.append(
+            "<thead><tr>"
+            "<th>장면</th><th>카테고리</th><th>편집 팁</th>"
+            "<th>캡컷 폰트</th><th>캡컷 SFX</th>"
+            "</tr></thead><tbody>"
+        )
+
+        for tip in report.editing_tips:
+            cat = tip.category
+            tag_class = f"tag-{cat}" if cat in category_names else "tag-general"
+            cat_label = category_names.get(cat, cat)
+            scene_num = tip.scene_number
+            scene_label = f"Scene {scene_num}" if scene_num > 0 else "전체"
+
+            td_thumb = '<td style="width:100px;text-align:center;">'
+            if scene_num in scene_thumbs:
+                td_thumb += (
+                    f'<img class="thumb" '
+                    f'src="data:image/jpeg;base64,{scene_thumbs[scene_num]}" />'
+                )
+            else:
+                td_thumb += '<div class="thumb-placeholder">—</div>'
+            td_thumb += f'<div class="tip-scene-label">{scene_label}</div>'
+            sr_match = next(
+                (sr for sr in report.scene_reviews if sr.scene_number == scene_num),
+                None,
             )
+            if sr_match and sr_match.matched_time_range:
+                td_thumb += f'<div class="tip-scene-time">{sr_match.matched_time_range}</div>'
+            td_thumb += "</td>"
 
-            for tip in report.editing_tips:
-                cat = tip.category
-                tag_class = f"tag-{cat}" if cat in category_names else "tag-general"
-                cat_label = category_names.get(cat, cat)
-                scene_num = tip.scene_number
-                scene_label = f"Scene {scene_num}" if scene_num > 0 else "전체"
+            td_cat = f'<td><span class="tag-tip {tag_class}">{cat_label}</span></td>'
 
-                td_thumb = '<td style="width:100px;text-align:center;">'
-                if scene_num in scene_thumbs:
-                    td_thumb += (
-                        f'<img class="thumb" '
-                        f'src="data:image/jpeg;base64,{scene_thumbs[scene_num]}" />'
-                    )
-                else:
-                    td_thumb += '<div class="thumb-placeholder">—</div>'
-                td_thumb += f'<div class="tip-scene-label">{scene_label}</div>'
-                sr_match = next(
-                    (sr for sr in report.scene_reviews if sr.scene_number == scene_num),
-                    None,
-                )
-                if sr_match and sr_match.matched_time_range:
-                    td_thumb += f'<div class="tip-scene-time">{sr_match.matched_time_range}</div>'
-                td_thumb += "</td>"
-
-                td_cat = (
-                    f'<td><span class="tag-tip {tag_class}">{cat_label}</span></td>'
-                )
-
-                td_tip = "<td>"
-                tip_items = tip.tip if isinstance(tip.tip, list) else [tip.tip]
-                if tip_items:
-                    td_tip += '<ul class="tip-list">'
-                    for item in tip_items:
-                        td_tip += f"<li>{item}</li>"
-                    td_tip += "</ul>"
-                if tip.capcut_how:
-                    path_fmt = tip.capcut_how.replace(
-                        " > ", ' <span class="pa">›</span> '
-                    ).replace(
-                        " → ", ' <span class="pa">›</span> '
-                    )
-                    td_tip += f'<div class="capcut-path-inline">{path_fmt}</div>'
-                td_tip += "</td>"
-
-                if tip.font_names:
-                    td_font = "<td>" + " ".join(
-                        f'<span class="font-chip">{f}</span>' for f in tip.font_names
-                    )
-                    if tip.capcut_how and cat == "font":
-                        path_fmt = tip.capcut_how.replace(" > ", " › ").replace(" → ", " › ")
-                        td_font += f'<div class="capcut-path-inline">{path_fmt}</div>'
-                    td_font += "</td>"
-                else:
-                    td_font = '<td class="td-empty">—</td>'
-
-                if tip.sfx_names:
-                    td_sfx = "<td>" + " ".join(
-                        f'<span class="sfx-badge">{s}</span>' for s in tip.sfx_names
-                    ) + "</td>"
-                else:
-                    td_sfx = '<td class="td-empty">—</td>'
-
-                html.append(
-                    f"<tr>{td_thumb}{td_cat}{td_tip}{td_font}{td_sfx}</tr>"
-                )
-
-            html.append("</tbody></table></div>")
-
-            st.markdown("".join(html), unsafe_allow_html=True)
-
-            st.markdown("")
-
-            # Download as text for creator
-            tips_text = "🎨 편집 가이드 (캡컷 기준)\n" + "=" * 40 + "\n\n"
-            for tip in report.editing_tips:
-                scene_label = f"Scene {tip.scene_number}" if tip.scene_number > 0 else "전체"
-                tips_text += f"[{scene_label}] [{category_names.get(tip.category, tip.category)}]\n"
-                tip_items = tip.tip if isinstance(tip.tip, list) else [tip.tip]
+            td_tip = "<td>"
+            tip_items = tip.tip if isinstance(tip.tip, list) else [tip.tip]
+            if tip_items:
+                td_tip += '<ul class="tip-list">'
                 for item in tip_items:
-                    tips_text += f"  → {item}\n"
-                if tip.font_names:
-                    tips_text += f"  폰트: {', '.join(tip.font_names)}\n"
-                if tip.sfx_names:
-                    tips_text += f"  SFX: {', '.join(tip.sfx_names)}\n"
-                if tip.capcut_how:
-                    tips_text += f"  캡컷: {tip.capcut_how}\n"
-                tips_text += "\n"
+                    td_tip += f"<li>{item}</li>"
+                td_tip += "</ul>"
+            if tip.capcut_how:
+                path_fmt = tip.capcut_how.replace(
+                    " > ", ' <span class="pa">›</span> '
+                ).replace(
+                    " → ", ' <span class="pa">›</span> '
+                )
+                td_tip += f'<div class="capcut-path-inline">{path_fmt}</div>'
+            td_tip += "</td>"
 
-            st.download_button(
-                label="📥 편집 가이드 다운로드 (.txt)",
-                data=tips_text,
-                file_name="editing_tips.txt",
-                mime="text/plain",
+            if tip.font_names:
+                td_font = "<td>" + " ".join(
+                    f'<span class="font-chip">{f}</span>' for f in tip.font_names
+                )
+                if tip.capcut_how and cat == "font":
+                    path_fmt = tip.capcut_how.replace(" > ", " › ").replace(" → ", " › ")
+                    td_font += f'<div class="capcut-path-inline">{path_fmt}</div>'
+                td_font += "</td>"
+            else:
+                td_font = '<td class="td-empty">—</td>'
+
+            if tip.sfx_names:
+                td_sfx = "<td>" + " ".join(
+                    f'<span class="sfx-badge">{s}</span>' for s in tip.sfx_names
+                ) + "</td>"
+            else:
+                td_sfx = '<td class="td-empty">—</td>'
+
+            html.append(f"<tr>{td_thumb}{td_cat}{td_tip}{td_font}{td_sfx}</tr>")
+
+        html.append("</tbody></table></div>")
+        st.markdown("".join(html), unsafe_allow_html=True)
+
+        tips_text = "🎨 편집 가이드 (캡컷 기준)\n" + "=" * 40 + "\n\n"
+        for tip in report.editing_tips:
+            scene_label = f"Scene {tip.scene_number}" if tip.scene_number > 0 else "전체"
+            tips_text += f"[{scene_label}] [{category_names.get(tip.category, tip.category)}]\n"
+            tip_items = tip.tip if isinstance(tip.tip, list) else [tip.tip]
+            for item in tip_items:
+                tips_text += f"  → {item}\n"
+            if tip.font_names:
+                tips_text += f"  폰트: {', '.join(tip.font_names)}\n"
+            if tip.sfx_names:
+                tips_text += f"  SFX: {', '.join(tip.sfx_names)}\n"
+            if tip.capcut_how:
+                tips_text += f"  캡컷: {tip.capcut_how}\n"
+            tips_text += "\n"
+
+        st.download_button(
+            label="📥 편집 가이드 다운로드 (.txt)",
+            data=tips_text,
+            file_name="editing_tips.txt",
+            mime="text/plain",
+            key=f"{key_prefix}_dl_tips",
+        )
+
+
+# ===== Tab 2: 검수 결과 (크리에이터별 카드) =====
+with tab2:
+    if "parsed_guideline" in st.session_state:
+        _g_tab2: ParsedGuideline = st.session_state["parsed_guideline"]
+        _campaign_tab2 = _g_tab2.title or _g_tab2.product_name or "default"
+
+        # Load all reviews for this campaign
+        _all_reviews_tab2 = db.list_reviews(_campaign_tab2)
+
+        if _all_reviews_tab2:
+            # Collect available draft numbers
+            _rounds_set = sorted(set(r.get("round", 1) for r in _all_reviews_tab2))
+            _filter_options = ["전체"] + [f"Draft {d}" for d in _rounds_set]
+            _selected_draft = st.radio(
+                "Draft 필터",
+                _filter_options,
+                horizontal=True,
+                key="tab2_draft_filter",
+                label_visibility="collapsed",
             )
+
+            # Apply draft filter
+            if _selected_draft == "전체":
+                _filtered_reviews = _all_reviews_tab2
+            else:
+                _draft_num = int(_selected_draft.replace("Draft ", ""))
+                _filtered_reviews = [r for r in _all_reviews_tab2 if r.get("round", 1) == _draft_num]
+
+            # Group by creator (keep all rounds per creator, sorted newest first)
+            from collections import OrderedDict
+            _creators: dict[str, list[dict]] = OrderedDict()
+            for rev in _filtered_reviews:
+                cname = rev.get("creator_name", "?")
+                if cname not in _creators:
+                    _creators[cname] = []
+                _creators[cname].append(rev)
+
+            st.caption(f"크리에이터 {len(_creators)}명 · 검수 {len(_filtered_reviews)}건")
+
+            for _ci, (creator_name, reviews) in enumerate(_creators.items()):
+                # Latest review for this creator (in filtered set)
+                latest = reviews[0]
+                _sc = latest.get("overall_score", 0)
+                _rd = latest.get("round", 1)
+                _ts = latest["created_at"][:10] if latest.get("created_at") else ""
+                _st_icon = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}.get(
+                    latest.get("overall_status", ""), "❓"
+                )
+                _ad = latest.get("admin_decision", "")
+                _ad_map = {
+                    "approved": "✅승인", "auto_approved": "🤖자동승인",
+                    "revision_needed": "📝수정요청", "rejected": "❌반려",
+                }
+                _ad_label = _ad_map.get(_ad, "⏳대기")
+                _score_dot = "🟢" if _sc >= 80 else ("🟡" if _sc >= 60 else "🔴")
+
+                with st.expander(
+                    f"{_score_dot} **{creator_name}** | {_sc}점 {_st_icon} | Draft {_rd} | {_ad_label} | {_ts}",
+                    expanded=False,
+                ):
+                    # Render latest review
+                    _latest_report = ReviewReport.model_validate(latest["report_json"])
+                    _render_review_report(
+                        _latest_report,
+                        review_id=latest["id"],
+                        key_prefix=f"t2_{_ci}_0",
+                    )
+
+                    # Brand feedback
+                    if latest.get("brand_feedback"):
+                        st.warning(f"**브랜드 피드백:** {latest['brand_feedback']}")
+
+                    # Older rounds for this creator
+                    _older_rounds = reviews[1:]
+                    if _older_rounds:
+                        st.divider()
+                        st.markdown(f"#### 📂 이전 검수 이력")
+                        for _oi, _old_rev in enumerate(_older_rounds):
+                            _o_sc = _old_rev.get("overall_score", 0)
+                            _o_rd = _old_rev.get("round", 1)
+                            _o_ts = _old_rev["created_at"][:16].replace("T", " ") if _old_rev.get("created_at") else ""
+                            _o_st = {"approved": "✅", "revision_needed": "📝", "rejected": "❌"}.get(
+                                _old_rev.get("overall_status", ""), "❓"
+                            )
+                            with st.expander(
+                                f"Draft {_o_rd} — {_o_sc}점 {_o_st} ({_o_ts})",
+                                expanded=False,
+                            ):
+                                _old_report = ReviewReport.model_validate(_old_rev["report_json"])
+                                st.markdown(f"**요약:** {_old_report.summary}")
+                                _old_issues = [s for s in _old_report.scene_reviews if s.status in ("fail", "warning")]
+                                if _old_issues:
+                                    st.markdown("**수정 필요 항목:**")
+                                    for _osr in _old_issues:
+                                        _oicon = "❌" if _osr.status == "fail" else "⚠️"
+                                        _otime = f" ({_osr.matched_time_range})" if _osr.matched_time_range else ""
+                                        st.markdown(f"- {_oicon} Scene {_osr.scene_number}{_otime}: {_osr.findings[:200]}")
+                                if _old_rev.get("admin_decision"):
+                                    _oad_labels = {"approved": "✅ 승인", "auto_approved": "🤖 자동승인",
+                                                   "revision_needed": "📝 수정요청", "rejected": "❌ 반려"}
+                                    st.info(f"**결정:** {_oad_labels.get(_old_rev['admin_decision'], _old_rev['admin_decision'])}")
+                                if _old_rev.get("brand_feedback"):
+                                    st.warning(f"**브랜드 피드백:** {_old_rev['brand_feedback']}")
+        else:
+            st.info("아직 검수 결과가 없습니다. 사이드바에서 영상 검수를 시작하세요.")
     else:
-        st.info("검수가 완료되면 여기에 결과가 표시됩니다.")
+        st.info("가이드라인을 먼저 로드하세요. 사이드바에서 가이드라인을 파싱하거나 저장된 가이드라인을 불러오세요.")
 
 
 # ===== Tab 3: Caption Check =====
