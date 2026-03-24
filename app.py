@@ -1157,11 +1157,12 @@ def _get_scene_frames_html(time_range: str, processed_video, status: str = "") -
 
 
 # ===== Tab 2 Helper: render a single review report =====
-def _render_review_report(report: ReviewReport, review_id: int | None = None, key_prefix: str = ""):
+def _render_review_report(report: ReviewReport, review_id: int | None = None, key_prefix: str = "", brand_feedback: str = ""):
     """Render a full review report inside any container (expander, tab, etc.).
 
     Uses report.scene_thumbnails for frames (no live processed_video needed).
     key_prefix: unique prefix for Streamlit widget keys to avoid conflicts.
+    brand_feedback: brand feedback text to show before admin decision.
     """
     import base64 as _b64_render
     import re as _re_render
@@ -1315,6 +1316,11 @@ def _render_review_report(report: ReviewReport, review_id: int | None = None, ke
             st.divider()
 
         st.divider()
+
+    # --- Brand Feedback (어드민 결정 바로 위) ---
+    if brand_feedback:
+        st.markdown("### 💬 브랜드 피드백")
+        st.warning(brand_feedback)
 
     # --- Admin Manual Decision (바로 액션) ---
     if review_id:
@@ -1630,11 +1636,8 @@ with tab2:
                         _latest_report,
                         review_id=latest["id"],
                         key_prefix=f"t2_{_ci}_0",
+                        brand_feedback=latest.get("brand_feedback", ""),
                     )
-
-                    # Brand feedback
-                    if latest.get("brand_feedback"):
-                        st.warning(f"**브랜드 피드백:** {latest['brand_feedback']}")
 
                     # Older rounds for this creator
                     _older_rounds = reviews[1:]
