@@ -1316,66 +1316,7 @@ def _render_review_report(report: ReviewReport, review_id: int | None = None, ke
 
         st.divider()
 
-        # Revision email (collapsed)
-        with st.expander("✉️ 수정 안내 이메일 초안", expanded=False):
-            if report.revision_items:
-                st.markdown("**수정 항목 요약:**")
-                for i, item in enumerate(report.revision_items, 1):
-                    st.markdown(f"{i}. {item}")
-                st.markdown("")
-
-            email_tab_ko, email_tab_en = st.tabs(["🇰🇷 한국어", "🇺🇸 English"])
-            with email_tab_ko:
-                email_text_ko = st.text_area(
-                    "한국어 메일 (편집 가능)",
-                    value=report.email_draft,
-                    height=350,
-                    key=f"{key_prefix}_email_ko",
-                )
-                col_ko1, col_ko2, _ = st.columns([1, 1, 2])
-                with col_ko1:
-                    st.download_button(
-                        label="📥 한국어 메일 다운로드",
-                        data=email_text_ko,
-                        file_name="revision_request_ko.txt",
-                        mime="text/plain",
-                        use_container_width=True,
-                        key=f"{key_prefix}_dl_ko",
-                    )
-                with col_ko2:
-                    if st.button("📋 복사", key=f"{key_prefix}_cp_ko", use_container_width=True):
-                        st.components.v1.html(
-                            f'<script>navigator.clipboard.writeText({json.dumps(email_text_ko)});</script>',
-                            height=0,
-                        )
-                        st.toast("클립보드에 복사되었습니다!")
-            with email_tab_en:
-                email_en_value = report.email_draft_en if report.email_draft_en else "(영어 버전이 생성되지 않았습니다.)"
-                email_text_en = st.text_area(
-                    "English email (editable)",
-                    value=email_en_value,
-                    height=350,
-                    key=f"{key_prefix}_email_en",
-                )
-                col_en1, col_en2, _ = st.columns([1, 1, 2])
-                with col_en1:
-                    st.download_button(
-                        label="📥 Download English email",
-                        data=email_text_en,
-                        file_name="revision_request_en.txt",
-                        mime="text/plain",
-                        use_container_width=True,
-                        key=f"{key_prefix}_dl_en",
-                    )
-                with col_en2:
-                    if st.button("📋 Copy", key=f"{key_prefix}_cp_en", use_container_width=True):
-                        st.components.v1.html(
-                            f'<script>navigator.clipboard.writeText({json.dumps(email_text_en)});</script>',
-                            height=0,
-                        )
-                        st.toast("Copied to clipboard!")
-
-    # --- Admin Manual Decision ---
+    # --- Admin Manual Decision (바로 액션) ---
     if review_id:
         st.markdown("### ⚖️ 어드민 최종 결정")
         manual_memo = st.text_input(
@@ -1452,117 +1393,175 @@ def _render_review_report(report: ReviewReport, review_id: int | None = None, ke
                 unsafe_allow_html=True,
             )
 
-    # --- Editing Tips ---
+    # --- Editing Tips (토글로 숨김) ---
     if report.editing_tips:
-        st.divider()
-        st.markdown("### ✂️ 캡컷 편집 팁")
+        with st.expander("✂️ 캡컷 편집 팁", expanded=False):
+            category_names = {
+                "font": "폰트/자막",
+                "effect": "효과/이펙트",
+                "transition": "전환/트랜지션",
+                "layout": "레이아웃/구도",
+                "sfx": "사운드/효과음",
+                "general": "일반 편집",
+            }
 
-        category_names = {
-            "font": "폰트/자막",
-            "effect": "효과/이펙트",
-            "transition": "전환/트랜지션",
-            "layout": "레이아웃/구도",
-            "sfx": "사운드/효과음",
-            "general": "일반 편집",
-        }
+            scene_thumbs = {int(k): v for k, v in report.scene_thumbnails.items()} if report.scene_thumbnails else {}
 
-        scene_thumbs = {int(k): v for k, v in report.scene_thumbnails.items()} if report.scene_thumbnails else {}
-
-        html = ['<div class="tips-wrap"><table class="tips-table">']
-        html.append(
-            "<thead><tr>"
-            "<th>장면</th><th>카테고리</th><th>편집 팁</th>"
-            "<th>캡컷 폰트</th><th>캡컷 SFX</th>"
-            "</tr></thead><tbody>"
-        )
-
-        for tip in report.editing_tips:
-            cat = tip.category
-            tag_class = f"tag-{cat}" if cat in category_names else "tag-general"
-            cat_label = category_names.get(cat, cat)
-            scene_num = tip.scene_number
-            scene_label = f"Scene {scene_num}" if scene_num > 0 else "전체"
-
-            td_thumb = '<td style="width:100px;text-align:center;">'
-            if scene_num in scene_thumbs:
-                td_thumb += (
-                    f'<img class="thumb" '
-                    f'src="data:image/jpeg;base64,{scene_thumbs[scene_num]}" />'
-                )
-            else:
-                td_thumb += '<div class="thumb-placeholder">—</div>'
-            td_thumb += f'<div class="tip-scene-label">{scene_label}</div>'
-            sr_match = next(
-                (sr for sr in report.scene_reviews if sr.scene_number == scene_num),
-                None,
+            html = ['<div class="tips-wrap"><table class="tips-table">']
+            html.append(
+                "<thead><tr>"
+                "<th>장면</th><th>카테고리</th><th>편집 팁</th>"
+                "<th>캡컷 폰트</th><th>캡컷 SFX</th>"
+                "</tr></thead><tbody>"
             )
-            if sr_match and sr_match.matched_time_range:
-                td_thumb += f'<div class="tip-scene-time">{sr_match.matched_time_range}</div>'
-            td_thumb += "</td>"
 
-            td_cat = f'<td><span class="tag-tip {tag_class}">{cat_label}</span></td>'
+            for tip in report.editing_tips:
+                cat = tip.category
+                tag_class = f"tag-{cat}" if cat in category_names else "tag-general"
+                cat_label = category_names.get(cat, cat)
+                scene_num = tip.scene_number
+                scene_label = f"Scene {scene_num}" if scene_num > 0 else "전체"
 
-            td_tip = "<td>"
-            tip_items = tip.tip if isinstance(tip.tip, list) else [tip.tip]
-            if tip_items:
-                td_tip += '<ul class="tip-list">'
+                td_thumb = '<td style="width:100px;text-align:center;">'
+                if scene_num in scene_thumbs:
+                    td_thumb += (
+                        f'<img class="thumb" '
+                        f'src="data:image/jpeg;base64,{scene_thumbs[scene_num]}" />'
+                    )
+                else:
+                    td_thumb += '<div class="thumb-placeholder">—</div>'
+                td_thumb += f'<div class="tip-scene-label">{scene_label}</div>'
+                sr_match = next(
+                    (sr for sr in report.scene_reviews if sr.scene_number == scene_num),
+                    None,
+                )
+                if sr_match and sr_match.matched_time_range:
+                    td_thumb += f'<div class="tip-scene-time">{sr_match.matched_time_range}</div>'
+                td_thumb += "</td>"
+
+                td_cat = f'<td><span class="tag-tip {tag_class}">{cat_label}</span></td>'
+
+                td_tip = "<td>"
+                tip_items = tip.tip if isinstance(tip.tip, list) else [tip.tip]
+                if tip_items:
+                    td_tip += '<ul class="tip-list">'
+                    for item in tip_items:
+                        td_tip += f"<li>{item}</li>"
+                    td_tip += "</ul>"
+                if tip.capcut_how:
+                    path_fmt = tip.capcut_how.replace(
+                        " > ", ' <span class="pa">›</span> '
+                    ).replace(
+                        " → ", ' <span class="pa">›</span> '
+                    )
+                    td_tip += f'<div class="capcut-path-inline">{path_fmt}</div>'
+                td_tip += "</td>"
+
+                if tip.font_names:
+                    td_font = "<td>" + " ".join(
+                        f'<span class="font-chip">{f}</span>' for f in tip.font_names
+                    )
+                    if tip.capcut_how and cat == "font":
+                        path_fmt = tip.capcut_how.replace(" > ", " › ").replace(" → ", " › ")
+                        td_font += f'<div class="capcut-path-inline">{path_fmt}</div>'
+                    td_font += "</td>"
+                else:
+                    td_font = '<td class="td-empty">—</td>'
+
+                if tip.sfx_names:
+                    td_sfx = "<td>" + " ".join(
+                        f'<span class="sfx-badge">{s}</span>' for s in tip.sfx_names
+                    ) + "</td>"
+                else:
+                    td_sfx = '<td class="td-empty">—</td>'
+
+                html.append(f"<tr>{td_thumb}{td_cat}{td_tip}{td_font}{td_sfx}</tr>")
+
+            html.append("</tbody></table></div>")
+            st.markdown("".join(html), unsafe_allow_html=True)
+
+            tips_text = "🎨 편집 가이드 (캡컷 기준)\n" + "=" * 40 + "\n\n"
+            for tip in report.editing_tips:
+                scene_label = f"Scene {tip.scene_number}" if tip.scene_number > 0 else "전체"
+                tips_text += f"[{scene_label}] [{category_names.get(tip.category, tip.category)}]\n"
+                tip_items = tip.tip if isinstance(tip.tip, list) else [tip.tip]
                 for item in tip_items:
-                    td_tip += f"<li>{item}</li>"
-                td_tip += "</ul>"
-            if tip.capcut_how:
-                path_fmt = tip.capcut_how.replace(
-                    " > ", ' <span class="pa">›</span> '
-                ).replace(
-                    " → ", ' <span class="pa">›</span> '
+                    tips_text += f"  → {item}\n"
+                if tip.font_names:
+                    tips_text += f"  폰트: {', '.join(tip.font_names)}\n"
+                if tip.sfx_names:
+                    tips_text += f"  SFX: {', '.join(tip.sfx_names)}\n"
+                if tip.capcut_how:
+                    tips_text += f"  캡컷: {tip.capcut_how}\n"
+                tips_text += "\n"
+
+            st.download_button(
+                label="📥 편집 가이드 다운로드 (.txt)",
+                data=tips_text,
+                file_name="editing_tips.txt",
+                mime="text/plain",
+                key=f"{key_prefix}_dl_tips",
+            )
+
+    # --- Revision email (맨 마지막, 접힘) ---
+    if has_issues:
+        with st.expander("✉️ 수정 안내 이메일 초안", expanded=False):
+            if report.revision_items:
+                st.markdown("**수정 항목 요약:**")
+                for i, item in enumerate(report.revision_items, 1):
+                    st.markdown(f"{i}. {item}")
+                st.markdown("")
+
+            email_tab_ko, email_tab_en = st.tabs(["🇰🇷 한국어", "🇺🇸 English"])
+            with email_tab_ko:
+                email_text_ko = st.text_area(
+                    "한국어 메일 (편집 가능)",
+                    value=report.email_draft,
+                    height=350,
+                    key=f"{key_prefix}_email_ko",
                 )
-                td_tip += f'<div class="capcut-path-inline">{path_fmt}</div>'
-            td_tip += "</td>"
-
-            if tip.font_names:
-                td_font = "<td>" + " ".join(
-                    f'<span class="font-chip">{f}</span>' for f in tip.font_names
+                col_ko1, col_ko2, _ = st.columns([1, 1, 2])
+                with col_ko1:
+                    st.download_button(
+                        label="📥 한국어 메일 다운로드",
+                        data=email_text_ko,
+                        file_name="revision_request_ko.txt",
+                        mime="text/plain",
+                        use_container_width=True,
+                        key=f"{key_prefix}_dl_ko",
+                    )
+                with col_ko2:
+                    if st.button("📋 복사", key=f"{key_prefix}_cp_ko", use_container_width=True):
+                        st.components.v1.html(
+                            f'<script>navigator.clipboard.writeText({json.dumps(email_text_ko)});</script>',
+                            height=0,
+                        )
+                        st.toast("클립보드에 복사되었습니다!")
+            with email_tab_en:
+                email_en_value = report.email_draft_en if report.email_draft_en else "(영어 버전이 생성되지 않았습니다.)"
+                email_text_en = st.text_area(
+                    "English email (editable)",
+                    value=email_en_value,
+                    height=350,
+                    key=f"{key_prefix}_email_en",
                 )
-                if tip.capcut_how and cat == "font":
-                    path_fmt = tip.capcut_how.replace(" > ", " › ").replace(" → ", " › ")
-                    td_font += f'<div class="capcut-path-inline">{path_fmt}</div>'
-                td_font += "</td>"
-            else:
-                td_font = '<td class="td-empty">—</td>'
-
-            if tip.sfx_names:
-                td_sfx = "<td>" + " ".join(
-                    f'<span class="sfx-badge">{s}</span>' for s in tip.sfx_names
-                ) + "</td>"
-            else:
-                td_sfx = '<td class="td-empty">—</td>'
-
-            html.append(f"<tr>{td_thumb}{td_cat}{td_tip}{td_font}{td_sfx}</tr>")
-
-        html.append("</tbody></table></div>")
-        st.markdown("".join(html), unsafe_allow_html=True)
-
-        tips_text = "🎨 편집 가이드 (캡컷 기준)\n" + "=" * 40 + "\n\n"
-        for tip in report.editing_tips:
-            scene_label = f"Scene {tip.scene_number}" if tip.scene_number > 0 else "전체"
-            tips_text += f"[{scene_label}] [{category_names.get(tip.category, tip.category)}]\n"
-            tip_items = tip.tip if isinstance(tip.tip, list) else [tip.tip]
-            for item in tip_items:
-                tips_text += f"  → {item}\n"
-            if tip.font_names:
-                tips_text += f"  폰트: {', '.join(tip.font_names)}\n"
-            if tip.sfx_names:
-                tips_text += f"  SFX: {', '.join(tip.sfx_names)}\n"
-            if tip.capcut_how:
-                tips_text += f"  캡컷: {tip.capcut_how}\n"
-            tips_text += "\n"
-
-        st.download_button(
-            label="📥 편집 가이드 다운로드 (.txt)",
-            data=tips_text,
-            file_name="editing_tips.txt",
-            mime="text/plain",
-            key=f"{key_prefix}_dl_tips",
-        )
+                col_en1, col_en2, _ = st.columns([1, 1, 2])
+                with col_en1:
+                    st.download_button(
+                        label="📥 Download English email",
+                        data=email_text_en,
+                        file_name="revision_request_en.txt",
+                        mime="text/plain",
+                        use_container_width=True,
+                        key=f"{key_prefix}_dl_en",
+                    )
+                with col_en2:
+                    if st.button("📋 Copy", key=f"{key_prefix}_cp_en", use_container_width=True):
+                        st.components.v1.html(
+                            f'<script>navigator.clipboard.writeText({json.dumps(email_text_en)});</script>',
+                            height=0,
+                        )
+                        st.toast("Copied to clipboard!")
 
 
 # ===== Tab 2: 검수 결과 (크리에이터별 카드) =====
