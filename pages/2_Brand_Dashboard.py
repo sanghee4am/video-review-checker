@@ -441,6 +441,21 @@ def _render_brand_review(report: ReviewReport):
 st.markdown("---")
 st.markdown("### 크리에이터별 검수 결과")
 
+# Draft filter
+_rounds_set = sorted(set(r.get("round", 1) for r in all_reviews))
+if len(_rounds_set) > 1:
+    _filter_options = ["전체"] + [f"Draft {d}" for d in _rounds_set]
+    _selected_draft = st.radio(
+        "Draft 필터",
+        _filter_options,
+        horizontal=True,
+        key="brand_draft_filter",
+        label_visibility="collapsed",
+    )
+    if _selected_draft != "전체":
+        _draft_num = int(_selected_draft.replace("Draft ", ""))
+        all_reviews = [r for r in all_reviews if r.get("round", 1) == _draft_num]
+
 # Group all reviews by creator
 from collections import OrderedDict
 creators_reviews: dict[str, list[dict]] = OrderedDict()
