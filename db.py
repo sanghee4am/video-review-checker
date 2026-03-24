@@ -106,6 +106,7 @@ def save_review(
     report: ReviewReport,
     round_num: int = 1,
     campaign_id: Optional[int] = None,
+    video_url: Optional[str] = None,
 ) -> int:
     """Save a review result. Auto-approves if score >= 90 and no manual flags. Returns the row ID."""
     sb = _get_client()
@@ -119,6 +120,8 @@ def save_review(
     }
     if campaign_id:
         data["campaign_id"] = campaign_id
+    if video_url:
+        data["video_url"] = video_url
     # 90+ with no manual flags → auto-approve
     if report.overall_score >= 90 and not report.manual_review_flags:
         data["admin_decision"] = "auto_approved"
@@ -166,7 +169,7 @@ def list_reviews(campaign_name: str) -> list[dict]:
     sb = _get_client()
     result = (
         sb.table("vc_reviews")
-        .select("id, creator_name, round, overall_score, overall_status, created_at, admin_decision, admin_memo, brand_feedback, report_json")
+        .select("id, creator_name, round, overall_score, overall_status, created_at, admin_decision, admin_memo, brand_feedback, report_json, video_url")
         .eq("campaign_name", campaign_name)
         .order("created_at", desc=True)
         .execute()

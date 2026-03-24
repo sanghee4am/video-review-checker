@@ -945,7 +945,7 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
                     filename, tmp_path = download_gdrive_video(_single_url, dl_progress)
                     video_bytes = tmp_path.read_bytes()
                     tmp_path.unlink(missing_ok=True)
-                    video_items.append((filename, video_bytes))
+                    video_items.append((filename, video_bytes, _single_url))
                     st.success(f"다운로드 완료: {filename} ({len(video_bytes) // (1024*1024)}MB)")
                 except Exception as e:
                     st.error(f"다운로드 실패: {_single_url[:60]}... — {e}")
@@ -971,7 +971,7 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
                     if len(video_items) > 1:
                         # 여러 영상일 때 — 각 파일명에서 개별 추출 예고
                         _creator_names = []
-                        for _vi_fn, _ in video_items:
+                        for _vi_fn, *_ in video_items:
                             _vi_stem = _vi_fn.rsplit(".", 1)[0] if "." in _vi_fn else _vi_fn
                             _vi_handle = _vi_stem.split("_")[0] if "_" in _vi_stem else _vi_stem
                             if _vi_handle and _vi_handle not in _creator_names:
@@ -981,7 +981,7 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
                         st.info(f"📎 파일명에서 크리에이터 자동 추출: **{c_name}**")
         else:
             for vf in video_files:
-                video_items.append((vf.name, vf.read()))
+                video_items.append((vf.name, vf.read(), ""))
 
         num_videos = len(video_items)
 
@@ -992,8 +992,12 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
             pct = 5 + int((done / total) * 25)
             progress_bar.progress(pct, text=f"전처리 완료: {done}/{total} ({fname})")
 
+        # Build URL mapping before stripping URLs for processing
+        _video_url_map = {vi[0]: vi[2] for vi in video_items}  # filename -> drive_url
+        _video_items_no_url = [(vi[0], vi[1]) for vi in video_items]  # (filename, bytes)
+
         processed_videos = process_videos_parallel(
-            video_items,
+            _video_items_no_url,
             max_workers=4,
             progress_callback=preprocess_progress,
         )
@@ -1081,7 +1085,8 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
                 _dm_save = _re_save.search(r'(\d+)\s*차', fname)
             _file_round = int(_dm_save.group(1)) if _dm_save else current_round
 
-            rid = db.save_review(campaign_id, _save_name, data["report"], _file_round)
+            rid = db.save_review(campaign_id, _save_name, data["report"], _file_round,
+                                video_url=_video_url_map.get(fname, ""))
             st.session_state["last_review_id"] = rid
             st.session_state["last_review_campaign"] = campaign_id
             st.session_state["last_review_creator"] = _save_name

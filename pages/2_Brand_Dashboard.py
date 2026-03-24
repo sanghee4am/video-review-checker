@@ -485,6 +485,11 @@ for ci, (creator_name, reviews) in enumerate(creators_reviews.items()):
         f"{score_dot} **{creator_name}** | {sc}점 {st_icon} | Draft {rd} | {ad_label} | {ts}",
         expanded=False,
     ):
+        # Video link
+        _vid_url = latest.get("video_url", "")
+        if _vid_url:
+            st.markdown(f"🎬 [영상 보기]({_vid_url})")
+
         # Render review
         report = ReviewReport.model_validate(latest["report_json"])
         _render_brand_review(report)
