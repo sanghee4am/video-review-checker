@@ -5,6 +5,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
+import streamlit as st
 from supabase import create_client, Client
 
 from config import SUPABASE_URL, SUPABASE_KEY
@@ -12,8 +13,9 @@ from models.guideline import ParsedGuideline
 from models.review_result import ReviewReport
 
 
+@st.cache_resource
 def _get_client() -> Client:
-    """Get Supabase client (cached via module-level)."""
+    """Get Supabase client (cached — single instance reused across reruns)."""
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set in .env")
     return create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -55,6 +57,7 @@ def list_guidelines() -> list[dict]:
         sb.table("vc_guidelines")
         .select("id, campaign_name, created_at, updated_at")
         .order("created_at", desc=True)
+        .limit(100)
         .execute()
     )
     return result.data
@@ -164,20 +167,21 @@ def get_next_round(campaign_name: str, creator_name: str) -> int:
     return prev[1] + 1
 
 
-def list_reviews(campaign_name: str) -> list[dict]:
-    """List all reviews for a campaign."""
+def list_reviews(campaign_name: str, limit: int = 200) -> list[dict]:
+    """List reviews for a campaign (newest first, default 200)."""
     sb = _get_client()
     result = (
         sb.table("vc_reviews")
         .select("id, creator_name, round, overall_score, overall_status, created_at, admin_decision, admin_memo, brand_feedback, report_json, video_url")
         .eq("campaign_name", campaign_name)
         .order("created_at", desc=True)
+        .limit(limit)
         .execute()
     )
     return result.data
 
 
-def get_submission_status(campaign_name: str) -> list[dict]:
+def get_submission_status(campaign_name: str, limit: int = 500) -> list[dict]:
     """Get latest submission per creator for a campaign.
 
     Returns list of {creator_name, round, overall_score, overall_status, created_at, ...}.
@@ -188,6 +192,7 @@ def get_submission_status(campaign_name: str) -> list[dict]:
         .select("id, creator_name, round, overall_score, overall_status, created_at, admin_decision, brand_feedback, caption_check_result")
         .eq("campaign_name", campaign_name)
         .order("created_at", desc=True)
+        .limit(limit)
         .execute()
     )
     # Deduplicate: keep only latest per creator
@@ -304,6 +309,7 @@ def get_campaigns_summary() -> list[dict]:
         sb.table("vc_reviews")
         .select("campaign_name, creator_name, overall_score, overall_status, admin_decision, caption_check_result, created_at")
         .order("created_at", desc=True)
+        .limit(1000)
         .execute()
     )
     # Aggregate per campaign (latest per creator only)

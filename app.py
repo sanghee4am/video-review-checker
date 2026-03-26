@@ -1094,6 +1094,21 @@ if review_btn and has_video_input and "parsed_guideline" in st.session_state:
             # 시트 기입 + 슬랙 알림 (per creator)
             _try_sheet_and_slack(campaign_id, _save_name, data["report"])
 
+        # --- Memory cleanup: 프레임 이미지 데이터 해제 ---
+        for _res in all_results.values():
+            pv = _res.get("processed_video")
+            if pv and hasattr(pv, "frames"):
+                pv.frames = []  # 프레임 이미지 바이트 해제
+        if "batch_results" in st.session_state:
+            for _res in st.session_state["batch_results"].values():
+                pv = _res.get("processed_video")
+                if pv and hasattr(pv, "frames"):
+                    pv.frames = []
+        if "processed_video" in st.session_state:
+            pv = st.session_state["processed_video"]
+            if hasattr(pv, "frames"):
+                pv.frames = []
+
         progress_bar.progress(100, text=f"검수 완료! ({num_videos}개 영상)")
         st.session_state["_review_just_completed"] = True
         st.rerun()

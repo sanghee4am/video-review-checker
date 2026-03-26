@@ -1037,6 +1037,10 @@ def _render_upload_form(campaign_id: str, c_name: str, guideline_obj):
 
             report.attach_thumbnails(processed_video)
             db.save_review(campaign_id, c_name, report, current_round)
+
+            # Memory cleanup: 프레임 이미지 해제
+            processed_video.frames = []
+
             progress.progress(100, text=t("done"))
 
             # Rerun to show updated stage
