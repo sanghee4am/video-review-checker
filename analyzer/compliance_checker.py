@@ -549,7 +549,7 @@ def _build_guideline_images_content(guideline_images: list) -> list:
 
 
 def _call_claude_with_retry(client, content, max_tokens=8192, max_retries=5):
-    """Call Claude API with adaptive exponential backoff on rate limit."""
+    """Call Claude API with adaptive exponential backoff on rate limit / overload."""
     for attempt in range(max_retries):
         try:
             response = client.messages.create(
@@ -559,7 +559,7 @@ def _call_claude_with_retry(client, content, max_tokens=8192, max_retries=5):
                 messages=[{"role": "user", "content": content}],
             )
             return response
-        except anthropic.RateLimitError:
+        except (anthropic.RateLimitError, anthropic.OverloadedError):
             if attempt < max_retries - 1:
                 wait_time = min(30 * (2 ** attempt), 300)  # 30s, 60s, 120s, 240s, cap 300s
                 time.sleep(wait_time)
