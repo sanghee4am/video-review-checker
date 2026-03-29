@@ -14,6 +14,6 @@ RUN pip install --no-cache-dir -r requirements-api.txt
 # 소스 복사
 COPY . .
 
-EXPOSE 3002
+EXPOSE 3003
 
-CMD ["uvicorn", "api_main:app", "--host", "0.0.0.0", "--port", "3002"]
+CMD ["uvicorn", "api_main:app", "--host", "0.0.0.0", "--port", "3003"]
