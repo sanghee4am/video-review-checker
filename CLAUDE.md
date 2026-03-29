@@ -95,6 +95,13 @@ python3.11 -m pipeline.main
 **새 캠페인 추가 시:** `pipeline/config_pipeline.py`의 `CAMPAIGN_CONFIGS`에 추가.
 
 ## 최근 변경 이력
+- `fdaee69` (2026-03-29): db.py streamlit 의존성 제거 (lru_cache로 대체)
+- `365959a` (2026-03-29): FastAPI 포트 3002→3003 변경 (3002는 대시보드 테스트용)
+- `6ad4316` (2026-03-29): FastAPI 백엔드 추가 (Streamlit → API 마이그레이션)
+- `d672778` (2026-03-27): API 529 Overloaded 에러 재시도 추가 — OverloadedError도 RateLimitError와 동일하게 최대 5회 재시도
+- `ab8bfce` (2026-03-27): 메모리 최적화 — Supabase 클라이언트 @st.cache_resource 캐싱, DB 쿼리 .limit() 추가, 검수 후 프레임 메모리 정리
+- `27f99a0`: 영상 Drive 링크 저장 + 브랜드 대시보드에 영상 보기 링크 표시
+- `5261327`: 브랜드 대시보드에 Draft 필터 추가 (전체/1차/2차)
 - `2026-03-21`: 메일 기반 파이프라인 → 드라이브 폴더 폴링 방식으로 전환
   - `drive_poller.py` 신규 — 1st/2nd Draft 폴더 스캔, 파일명에서 틱톡핸들 파싱
   - `main.py` 교체 — 드라이브 파일 기반 1회 실행 방식

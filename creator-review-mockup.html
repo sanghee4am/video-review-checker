@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Creator Page — Review Results Mockup v3</title>
+<style>
+/* ── app-guideline 기존 CSS ── */
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;color:#111;line-height:1.5}
+.wrap{max-width:600px;margin:0 auto;padding:28px 16px 60px}
+header{text-align:center;margin-bottom:24px}
+header h1{font-size:22px;font-weight:700}
+.card{background:#fff;border:1px solid #e5e5e5;border-radius:12px;margin-bottom:12px;overflow:hidden}
+.card-header-static{display:flex;align-items:center;padding:16px 20px;font-size:15px;font-weight:600;border-bottom:1px solid #f0f0f0}
+.card-body{padding:16px 20px 20px}
+.hidden{display:none}
+.chevron{font-size:12px;color:#888;transition:transform .2s}
+.muted{font-size:13px;color:#888}
+.alert-success{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px 14px;color:#166534;font-size:13px;font-weight:500;margin-bottom:16px}
+.alert-error{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;color:#dc2626;font-size:13px;margin-bottom:16px}
+.divider{border-top:1px solid #f0f0f0;margin:20px 0}
+.btn{width:100%;padding:14px;background:#111;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-top:4px}
+.btn:hover{background:#333}.btn:disabled{opacity:.4;cursor:not-allowed}
+.file-label{display:flex;align-items:center;gap:10px;cursor:pointer}
+.file-btn{display:inline-block;padding:7px 14px;background:#f4f4f4;border:1px solid #ddd;border-radius:6px;font-size:13px;white-space:nowrap}
+.file-name{font-size:13px;color:#888}
+.hint{font-size:11px;color:#aaa;margin-top:4px}
+
+/* ── 목업 전용 ── */
+.mockup-label{background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 16px;font-size:13px;color:#854d0e;margin-bottom:20px;text-align:center;font-weight:500}
+.mockup-label span{display:block;font-size:11px;color:#a16207;margin-top:2px;font-weight:400}
+.scenario-toggle{display:flex;gap:6px;justify-content:center;margin-bottom:24px;flex-wrap:wrap}
+.scenario-toggle button{padding:7px 14px;border:1px solid #ddd;border-radius:20px;font-size:12px;cursor:pointer;background:#fff}
+.scenario-toggle button.active{background:#111;color:#fff;border-color:#111}
+.faded{opacity:.45}
+
+/* ── Review 스타일 ── */
+.score-bar{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.score-circle{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#fff;flex-shrink:0}
+.score-circle.green{background:#16a34a}
+.score-circle.yellow{background:#d97706}
+.score-circle.red{background:#dc2626}
+.score-info{flex:1}
+.score-status{font-size:15px;font-weight:600}
+.score-sub{font-size:12px;color:#888;margin-top:2px}
+
+.revision-list{list-style:none;padding:0;margin:0}
+.revision-list li{display:flex;align-items:flex-start;gap:8px;padding:10px 0;border-bottom:1px solid #f5f5f5;font-size:13px;color:#333}
+.revision-list li:last-child{border-bottom:none}
+.revision-num{width:20px;height:20px;border-radius:50%;background:#fef2f2;color:#dc2626;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+
+.scene-item{padding:12px 0;border-bottom:1px solid #f5f5f5}
+.scene-item:last-child{border-bottom:none}
+.scene-header{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.scene-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px}
+.scene-badge.pass{background:#f0fdf4;color:#16a34a}
+.scene-badge.fail{background:#fef2f2;color:#dc2626}
+.scene-badge.warning{background:#fffbeb;color:#d97706}
+.scene-label{font-size:13px;font-weight:600;color:#333}
+.scene-time{font-size:11px;color:#aaa}
+.scene-body{display:flex;gap:12px}
+.scene-thumb-placeholder{width:80px;height:142px;border-radius:6px;background:#f4f4f4;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#bbb;border:1px dashed #ddd}
+.scene-text{flex:1;font-size:13px;color:#555;line-height:1.6}
+.scene-suggestion{margin-top:6px;padding:8px 10px;background:#fefce8;border-radius:6px;font-size:12px;color:#854d0e}
+
+.toggle-btn{width:100%;background:none;border:none;display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:4px 0}
+.toggle-btn span:first-child{font-size:13px;font-weight:600;color:#333}
+
+/* ── 에디팅 팁 테이블 (스트림릿 동일 5열) ── */
+.tips-wrap{overflow-x:auto;margin-top:4px}
+.tips-table{width:100%;border-collapse:collapse;font-size:12px;min-width:520px}
+.tips-table th{background:#f9fafb;text-align:left;padding:8px 10px;font-weight:600;color:#555;border-bottom:2px solid #e5e5e5;white-space:nowrap}
+.tips-table td{padding:8px 10px;border-bottom:1px solid #f0f0f0;vertical-align:top;color:#333}
+.tips-table tr:last-child td{border-bottom:none}
+.tip-scene-cell{text-align:center;width:90px}
+.tip-scene-label{font-size:12px;font-weight:600;color:#555;margin-top:4px}
+.tip-scene-time{font-size:10px;color:#aaa}
+.thumb-placeholder{width:64px;height:114px;border-radius:4px;background:#f0f0f0;border:1px dashed #ddd;display:flex;align-items:center;justify-content:center;font-size:10px;color:#ccc;margin:0 auto}
+.tag-tip{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:500}
+.tag-font{background:#ede9fe;color:#7c3aed}
+.tag-effect{background:#fce7f3;color:#db2777}
+.tag-transition{background:#e0f2fe;color:#0284c7}
+.tag-layout{background:#fef3c7;color:#d97706}
+.tag-sfx{background:#d1fae5;color:#059669}
+.tag-general{background:#f3f4f6;color:#6b7280}
+.tip-list{margin:0;padding-left:16px}
+.tip-list li{margin-bottom:2px;border:none;padding:1px 0;display:list-item}
+.capcut-path{font-size:11px;color:#999;margin-top:4px}
+.capcut-path .pa{color:#ccc;margin:0 3px}
+.font-chip{display:inline-block;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:4px;padding:1px 6px;font-size:11px;color:#6d28d9;margin:1px 2px}
+.sfx-badge{display:inline-block;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:4px;padding:1px 6px;font-size:11px;color:#047857;margin:1px 2px}
+.td-empty{color:#ddd;text-align:center}
+
+/* ── General Feedback ── */
+.general-feedback{background:#fff5f5;border-left:3px solid #f87171;padding:12px 14px;border-radius:0 8px 8px 0;font-size:13px;color:#991b1b;line-height:1.7;margin-bottom:16px;white-space:pre-wrap}
+.general-feedback-label{font-size:12px;font-weight:600;color:#dc2626;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+
+/* ── Caption Checklist ── */
+.caption-checklist{display:flex;flex-direction:column;gap:0}
+.cap-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f5f5f5;font-size:13px}
+.cap-item:last-child{border-bottom:none}
+.cap-icon{font-size:14px;flex-shrink:0}
+.cap-text{flex:1;color:#333}
+.cap-status{font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px}
+.cap-status.found{background:#f0fdf4;color:#16a34a}
+.cap-status.missing{background:#fef2f2;color:#dc2626}
+
+/* ── Unpaid Content Check ── */
+.content-check-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f5f5f5;font-size:13px}
+.content-check-item:last-child{border-bottom:none}
+.check-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px}
+.check-badge.pass{background:#f0fdf4;color:#16a34a}
+.check-badge.fail{background:#fef2f2;color:#dc2626}
+.check-desc{flex:1;color:#333}
+.check-reason{font-size:12px;color:#888;margin-top:2px}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="mockup-label">
+    MOCKUP v4 — Creator Review Results
+    <span>v3 피드백 반영: 캡션 체크 추가 / 무가 플로우 추가</span>
+  </div>
+
+  <p style="text-align:center;font-size:11px;color:#999;margin-bottom:6px;font-weight:600;letter-spacing:1px">유가 (PAID)</p>
+  <div class="scenario-toggle">
+    <button class="active" onclick="show('under80')">Score &lt; 80</button>
+    <button onclick="show('reviewing')">80+ Under Review</button>
+    <button onclick="show('approved')">Approved</button>
+    <button onclick="show('caption-fail')">Caption ❌</button>
+    <button onclick="show('caption-pass')">Caption ✅</button>
+    <button onclick="show('revision')">Revision Needed</button>
+  </div>
+  <p style="text-align:center;font-size:11px;color:#999;margin-bottom:6px;margin-top:16px;font-weight:600;letter-spacing:1px">무가 (UNPAID)</p>
+  <div class="scenario-toggle" style="margin-bottom:24px">
+    <button onclick="show('unpaid-submit')">URL 제출</button>
+    <button onclick="show('unpaid-fail')">검수 실패</button>
+    <button onclick="show('unpaid-pass')">검수 통과</button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- SCENARIO 1: Score < 80 — 제출 차단, 즉시 피드백  -->
+  <!-- ══════════════════════════════════════════════ -->
+  <div id="s-under80" class="scenario">
+    <div class="card">
+      <div class="card-header-static"><span>📝 Submit 1st Draft</span></div>
+      <div class="card-body">
+        <div class="alert-error" style="margin-bottom:0">
+          <strong>Your draft did not meet the minimum guideline score (80).</strong><br>
+          Please review the issues below and resubmit.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header-static"><span>🔴 Review Result</span></div>
+      <div class="card-body">
+        <div class="score-bar">
+          <div class="score-circle red">62</div>
+          <div class="score-info">
+            <div class="score-status" style="color:#dc2626">Does Not Meet Guidelines</div>
+            <div class="score-sub">Score must be 80 or above to submit your draft</div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <p style="font-size:13px;font-weight:600;color:#333;margin-bottom:10px">What to Fix</p>
+        <ul class="revision-list">
+          <li><span class="revision-num">1</span><span>Product must be shown within the first 3 seconds — currently not visible until 0:08</span></li>
+          <li><span class="revision-num">2</span><span>Required brand mention "ABC Beauty" is missing from the audio</span></li>
+          <li><span class="revision-num">3</span><span>Video is 18 seconds — minimum required length is 30 seconds</span></li>
+          <li><span class="revision-num">4</span><span>Background music is too loud, drowning out the creator's voice throughout</span></li>
+        </ul>
+
+        <div class="divider"></div>
+        <button class="toggle-btn" onclick="toggleDetail('scenes-80')">
+          <span>Scene Details</span>
+          <span class="chevron" id="chev-scenes-80">▼</span>
+        </button>
+        <div id="detail-scenes-80" class="hidden" style="margin-top:10px">
+          <div class="scene-item">
+            <div class="scene-header">
+              <span class="scene-badge fail">Fail</span>
+              <span class="scene-label">Scene 1 — Hook / Intro</span>
+              <span class="scene-time">0:00–0:05</span>
+            </div>
+            <div class="scene-body">
+              <div class="scene-thumb-placeholder">0:02</div>
+              <div class="scene-text">
+                No product shown in opening. Guideline requires product visibility within first 3 seconds.
+                <div class="scene-suggestion">💡 Start the video with the product in hand or in frame.</div>
+              </div>
+            </div>
+          </div>
+          <div class="scene-item">
+            <div class="scene-header">
+              <span class="scene-badge fail">Fail</span>
+              <span class="scene-label">Scene 2 — Product Demo</span>
+              <span class="scene-time">0:05–0:12</span>
+            </div>
+            <div class="scene-body">
+              <div class="scene-thumb-placeholder">0:08</div>
+              <div class="scene-text">
+                Product appears but brand name "ABC Beauty" is not mentioned. BGM overpowers speech.
+                <div class="scene-suggestion">💡 Say the brand name clearly and lower BGM to ~20%.</div>
+              </div>
+            </div>
+          </div>
+          <div class="scene-item">
+            <div class="scene-header">
+              <span class="scene-badge warning">Warning</span>
+              <span class="scene-label">Scene 3 — CTA</span>
+              <span class="scene-time">0:12–0:18</span>
+            </div>
+            <div class="scene-body">
+              <div class="scene-thumb-placeholder">0:15</div>
+              <div class="scene-text">
+                CTA is present but feels rushed due to short video length.
+                <div class="scene-suggestion">💡 Extend the video to at least 30 seconds for a natural flow.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 에디팅 팁 (스트림릿 동일 5열) -->
+        <div class="divider"></div>
+        <button class="toggle-btn" onclick="toggleDetail('tips-80')">
+          <span>Editing Tips</span>
+          <span class="chevron" id="chev-tips-80">▼</span>
+        </button>
+        <div id="detail-tips-80" class="hidden" style="margin-top:10px">
+          <div class="tips-wrap">
+            <table class="tips-table">
+              <thead>
+                <tr>
+                  <th>Scene</th>
+                  <th>Category</th>
+                  <th>Editing Tips</th>
+                  <th>CapCut Fonts</th>
+                  <th>CapCut SFX</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="tip-scene-cell">
+                    <div class="thumb-placeholder">0:02</div>
+                    <div class="tip-scene-label">Scene 1</div>
+                    <div class="tip-scene-time">0:00–0:05</div>
+                  </td>
+                  <td><span class="tag-tip tag-layout">Layout</span></td>
+                  <td>
+                    <ul class="tip-list">
+                      <li>Move product close-up to the very first frame</li>
+                      <li>Use a quick zoom-in transition to grab attention</li>
+                    </ul>
+                    <div class="capcut-path">Timeline <span class="pa">›</span> drag clip to 0:00</div>
+                  </td>
+                  <td class="td-empty">—</td>
+                  <td class="td-empty">—</td>
+                </tr>
+                <tr>
+                  <td class="tip-scene-cell">
+                    <div class="thumb-placeholder">0:08</div>
+                    <div class="tip-scene-label">Scene 2</div>
+                    <div class="tip-scene-time">0:05–0:12</div>
+                  </td>
+                  <td><span class="tag-tip tag-sfx">SFX</span></td>
+                  <td>
+                    <ul class="tip-list">
+                      <li>Lower BGM volume so voice is clearly audible</li>
+                    </ul>
+                    <div class="capcut-path">Audio <span class="pa">›</span> BGM track <span class="pa">›</span> Volume 15–20%</div>
+                  </td>
+                  <td class="td-empty">—</td>
+                  <td><span class="sfx-badge">Calm → Soft Piano</span></td>
+                </tr>
+                <tr>
+                  <td class="tip-scene-cell">
+                    <div class="thumb-placeholder">—</div>
+                    <div class="tip-scene-label">General</div>
+                  </td>
+                  <td><span class="tag-tip tag-general">General</span></td>
+                  <td>
+                    <ul class="tip-list">
+                      <li>Extend video to 30+ seconds</li>
+                      <li>Add more usage demonstration footage</li>
+                    </ul>
+                  </td>
+                  <td class="td-empty">—</td>
+                  <td class="td-empty">—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 재업로드 -->
+    <div class="card">
+      <div class="card-header-static"><span>🔄 Resubmit Draft</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:#555;margin-bottom:14px">Fix the issues above and upload your revised draft.</p>
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:13px;font-weight:500;color:#555;margin-bottom:5px">Draft File(s) *</label>
+          <label class="file-label">
+            <span class="file-btn">Choose File(s)</span>
+            <span class="file-name">No file chosen</span>
+          </label>
+          <p class="hint">Video files only</p>
+        </div>
+        <button class="btn">Resubmit Draft</button>
+      </div>
+    </div>
+
+    <div class="card faded">
+      <div class="card-header-static"><span>🎬 Submit Content</span></div>
+      <div class="card-body"><p class="muted">Available after your draft is approved.</p></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- SCENARIO 2: 80+ Under Review                    -->
+  <!-- ══════════════════════════════════════════════ -->
+  <div id="s-reviewing" class="scenario" style="display:none">
+    <div class="card">
+      <div class="card-header-static"><span>✅ Draft Submitted</span></div>
+      <div class="card-body">
+        <p class="muted">Your draft has been submitted and is under review. We'll reach out if any revisions are needed.</p>
+      </div>
+    </div>
+
+    <div class="card faded">
+      <div class="card-header-static"><span>🎬 Submit Content</span></div>
+      <div class="card-body"><p class="muted">Available after your draft is approved.</p></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- SCENARIO 3: Approved — Content Submit 활성화     -->
+  <!-- ══════════════════════════════════════════════ -->
+  <div id="s-approved" class="scenario" style="display:none">
+    <div class="card">
+      <div class="card-header-static"><span>✅ Draft Approved</span></div>
+      <div class="card-body">
+        <div class="score-bar">
+          <div class="score-circle green">95</div>
+          <div class="score-info">
+            <div class="score-status" style="color:#16a34a">Approved</div>
+            <div class="score-sub">Your draft meets the guidelines. Please post and submit the link below!</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header-static"><span>🎬 Submit Content</span></div>
+      <div class="card-body">
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:13px;font-weight:500;color:#555;margin-bottom:5px">TikTok Post URL *</label>
+          <input style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none" placeholder="https://www.tiktok.com/@username/video/...">
+        </div>
+        <button class="btn">Submit Content</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- SCENARIO 3b: Caption Check FAIL                  -->
+  <!-- ══════════════════════════════════════════════ -->
+  <div id="s-caption-fail" class="scenario" style="display:none">
+    <div class="card">
+      <div class="card-header-static"><span>✅ Draft Approved</span></div>
+      <div class="card-body">
+        <div class="score-bar">
+          <div class="score-circle green">95</div>
+          <div class="score-info">
+            <div class="score-status" style="color:#16a34a">Approved</div>
+            <div class="score-sub">Draft approved</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header-static"><span>🎬 Submit Content</span></div>
+      <div class="card-body">
+        <div class="alert-error">
+          <strong>Your caption is missing required elements.</strong> Please update your post and resubmit.
+        </div>
+
+        <div style="margin-bottom:16px">
+          <p style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px">Caption Check</p>
+          <div class="caption-checklist">
+            <div class="cap-item pass"><span class="cap-icon">✅</span><span class="cap-text">#ABCBeauty</span><span class="cap-status found">Found</span></div>
+            <div class="cap-item pass"><span class="cap-icon">✅</span><span class="cap-text">@abcbeauty</span><span class="cap-status found">Found</span></div>
+            <div class="cap-item fail"><span class="cap-icon">❌</span><span class="cap-text">#ad (Ad Disclosure)</span><span class="cap-status missing">Missing</span></div>
+            <div class="cap-item fail"><span class="cap-icon">❌</span><span class="cap-text">#SponsoredByABC</span><span class="cap-status missing">Missing</span></div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <p style="font-size:13px;color:#555;margin-bottom:14px">Update your caption to include all required elements, then resubmit.</p>
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:13px;font-weight:500;color:#555;margin-bottom:5px">TikTok Post URL *</label>
+          <input style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none" placeholder="https://www.tiktok.com/@username/video/..." value="https://www.tiktok.com/@lucyhan/video/1234567890">
+        </div>
+        <button class="btn">Resubmit Content</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- SCENARIO 3c: Caption Check PASS — 완료!          -->
+  <!-- ══════════════════════════════════════════════ -->
+  <div id="s-caption-pass" class="scenario" style="display:none">
+    <div class="card">
+      <div class="card-header-static"><span>✅ Draft Approved</span></div>
+      <div class="card-body">
+        <div class="score-bar">
+          <div class="score-circle green">95</div>
+          <div class="score-info">
+            <div class="score-status" style="color:#16a34a">Approved</div>
+            <div class="score-sub">Draft approved</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header-static"><span>✅ Content Submitted</span></div>
+      <div class="card-body">
+        <div class="alert-success" style="margin-bottom:14px">All caption requirements met. You're all done!</div>
+
+        <div style="margin-bottom:14px">
+          <p style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px">Caption Check</p>
+          <div class="caption-checklist">
+            <div class="cap-item pass"><span class="cap-icon">✅</span><span class="cap-text">#ABCBeauty</span><span class="cap-status found">Found</span></div>
+            <div class="cap-item pass"><span class="cap-icon">✅</span><span class="cap-text">@abcbeauty</span><span class="cap-status found">Found</span></div>
+            <div class="cap-item pass"><span class="cap-icon">✅</span><span class="cap-text">#ad (Ad Disclosure)</span><span class="cap-status found">Found</span></div>
+            <div class="cap-item pass"><span class="cap-icon">✅</span><span class="cap-text">#SponsoredByABC</span><span class="cap-status found">Found</span></div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <div style="font-size:13px;color:#888">
+          <span style="font-weight:500">Post URL:</span>
+          <a href="#" style="color:#111;text-decoration:underline;margin-left:4px">https://www.tiktok.com/@lucyhan/video/1234567890</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- SCENARIO 4: Revision Needed (통합 — 브랜드 피드백 포함) -->
+  <!-- ══════════════════════════════════════════════ -->
+  <div id="s-revision" class="scenario" style="display:none">
+    <div class="card">
+      <div class="card-header-static"><span>📝 Revision Needed</span></div>
+      <div class="card-body">
+        <div class="score-bar">
+          <div class="score-circle yellow">82</div>
+          <div class="score-info">
+            <div class="score-status" style="color:#d97706">Revision Needed</div>
+            <div class="score-sub">Round 2 · Please fix the items below and resubmit</div>
+          </div>
+        </div>
+
+        <!-- General Feedback (브랜드 피드백이 있을 때만 노출) -->
+        <div>
+          <div class="general-feedback-label">General Feedback</div>
+          <div class="general-feedback">Please reshoot the product close-up scene — the product label should be facing the camera directly, not at an angle.
+
+Also, please add the discount code "SAVE20" as a text overlay in the last 3 seconds.</div>
+        </div>
+
+        <p style="font-size:13px;font-weight:600;color:#333;margin-bottom:10px">What to Fix</p>
+        <ul class="revision-list">
+          <li><span class="revision-num">1</span><span>Product label must face the camera directly — currently at an angle</span></li>
+          <li><span class="revision-num">2</span><span>Add discount code "SAVE20" as text overlay in the last 3 seconds</span></li>
+          <li><span class="revision-num">3</span><span>Background music slightly too loud at 0:12–0:18</span></li>
+        </ul>
+
+        <!-- 장면 상세 -->
+        <div class="divider"></div>
+        <button class="toggle-btn" onclick="toggleDetail('scenes-rev')">
+          <span>Scene Details</span>
+          <span class="chevron" id="chev-scenes-rev">▼</span>
+        </button>
+        <div id="detail-scenes-rev" class="hidden" style="margin-top:10px">
+          <div class="scene-item">
+            <div class="scene-header">
+              <span class="scene-badge pass">Pass</span>
+              <span class="scene-label">Scene 1 — Hook</span>
+              <span class="scene-time">0:00–0:03</span>
+            </div>
+            <div class="scene-body">
+              <div class="scene-thumb-placeholder">0:01</div>
+              <div class="scene-text">Good hook, meets all requirements.</div>
+            </div>
+          </div>
+          <div class="scene-item">
+            <div class="scene-header">
+              <span class="scene-badge warning">Warning</span>
+              <span class="scene-label">Scene 2 — Product Close-up</span>
+              <span class="scene-time">0:03–0:08</span>
+            </div>
+            <div class="scene-body">
+              <div class="scene-thumb-placeholder">0:05</div>
+              <div class="scene-text">
+                Product is visible but brand requested straight-on angle for the label.
+                <div class="scene-suggestion">💡 Reshoot with the product label directly facing the camera.</div>
+              </div>
+            </div>
+          </div>
+          <div class="scene-item">
+            <div class="scene-header">
+              <span class="scene-badge pass">Pass</span>
+              <span class="scene-label">Scene 3 — Usage Demo</span>
+              <span class="scene-time">0:08–0:22</span>
+            </div>
+            <div class="scene-body">
+              <div class="scene-thumb-placeholder">0:14</div>
+              <div class="scene-text">Good product demonstration with clear audio.</div>
+            </div>
+          </div>
+          <div class="scene-item">
+            <div class="scene-header">
+              <span class="scene-badge fail">Fail</span>
+              <span class="scene-label">Scene 4 — CTA / Outro</span>
+              <span class="scene-time">0:22–0:30</span>
+            </div>
+            <div class="scene-body">
+              <div class="scene-thumb-placeholder">0:26</div>
+              <div class="scene-text">
+                CTA is good but missing the required discount code overlay.
+                <div class="scene-suggestion">💡 Add "SAVE20" text overlay during 0:27–0:30.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 에디팅 팁 (스트림릿 동일 5열) -->
+        <div class="divider"></div>
+        <button class="toggle-btn" onclick="toggleDetail('tips-rev')">
+          <span>Editing Tips</span>
+          <span class="chevron" id="chev-tips-rev">▼</span>
+        </button>
+        <div id="detail-tips-rev" class="hidden" style="margin-top:10px">
+          <div class="tips-wrap">
+            <table class="tips-table">
+              <thead>
+                <tr>
+                  <th>Scene</th>
+                  <th>Category</th>
+                  <th>Editing Tips</th>
+                  <th>CapCut Fonts</th>
+                  <th>CapCut SFX</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="tip-scene-cell">
+                    <div class="thumb-placeholder">0:26</div>
+                    <div class="tip-scene-label">Scene 4</div>
+                    <div class="tip-scene-time">0:22–0:30</div>
+                  </td>
+                  <td><span class="tag-tip tag-font">Font</span></td>
+                  <td>
+                    <ul class="tip-list">
+                      <li>Add "SAVE20" text overlay with high contrast</li>
+                      <li>Position at center-bottom, duration 3 seconds</li>
+                    </ul>
+                    <div class="capcut-path">Text <span class="pa">›</span> Add Text <span class="pa">›</span> position at 0:27</div>
+                  </td>
+                  <td>
+                    <span class="font-chip">Montserrat Bold</span>
+                    <span class="font-chip">Impact</span>
+                  </td>
+                  <td class="td-empty">—</td>
+                </tr>
+                <tr>
+                  <td class="tip-scene-cell">
+                    <div class="thumb-placeholder">0:12</div>
+                    <div class="tip-scene-label">Scene 3</div>
+                    <div class="tip-scene-time">0:08–0:22</div>
+                  </td>
+                  <td><span class="tag-tip tag-sfx">SFX</span></td>
+                  <td>
+                    <ul class="tip-list">
+                      <li>Lower BGM volume to ~20%</li>
+                    </ul>
+                    <div class="capcut-path">Audio <span class="pa">›</span> BGM <span class="pa">›</span> Volume 15–20%</div>
+                  </td>
+                  <td class="td-empty">—</td>
+                  <td><span class="sfx-badge">Calm → Soft Piano</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2차 드래프트 업로드 -->
+    <div class="card">
+      <div class="card-header-static"><span>🔄 Submit 2nd Draft</span></div>
+      <div class="card-body">
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:13px;font-weight:500;color:#555;margin-bottom:5px">Draft File(s) *</label>
+          <label class="file-label">
+            <span class="file-btn">Choose File(s)</span>
+            <span class="file-name">No file chosen</span>
+          </label>
+          <p class="hint">Video files only</p>
+        </div>
+        <button class="btn">Submit 2nd Draft</button>
+      </div>
+    </div>
+
+    <div class="card faded">
+      <div class="card-header-static"><span>🎬 Submit Content</span></div>
+      <div class="card-body"><p class="muted">Available after your draft is approved.</p></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- 무가 SCENARIO 1: URL 제출 전                        -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <div id="s-unpaid-submit" class="scenario" style="display:none">
+    <div class="card">
+      <div class="card-header-static"><span>🎬 Submit Content</span></div>
+      <div class="card-body">
+        <p style="font-size:13px;color:#555;margin-bottom:14px">Post your content and submit the link below. We'll automatically check it meets the requirements.</p>
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:13px;font-weight:500;color:#555;margin-bottom:5px">TikTok Post URL *</label>
+          <input style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none" placeholder="https://www.tiktok.com/@username/video/...">
+        </div>
+        <button class="btn">Submit Content</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- 무가 SCENARIO 2: 검수 실패                           -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <div id="s-unpaid-fail" class="scenario" style="display:none">
+    <div class="card">
+      <div class="card-header-static"><span>🎬 Submit Content</span></div>
+      <div class="card-body">
+        <div class="alert-error">
+          <strong>Your post did not pass the content check.</strong> Please fix the issues below and resubmit.
+        </div>
+
+        <p style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px">Content Check</p>
+        <div style="margin-bottom:16px">
+          <div class="content-check-item">
+            <span class="cap-icon">✅</span>
+            <div class="check-desc">
+              Video format
+              <div class="check-reason">Posted as video (not image slideshow)</div>
+            </div>
+            <span class="check-badge pass">Pass</span>
+          </div>
+          <div class="content-check-item">
+            <span class="cap-icon">❌</span>
+            <div class="check-desc">
+              Not a dedicated post
+              <div class="check-reason">This appears to be a dedicated/ad-only post — must feel organic</div>
+            </div>
+            <span class="check-badge fail">Fail</span>
+          </div>
+          <div class="content-check-item">
+            <span class="cap-icon">✅</span>
+            <div class="check-desc">
+              Not a simple unboxing
+              <div class="check-reason">Content goes beyond basic unboxing</div>
+            </div>
+            <span class="check-badge pass">Pass</span>
+          </div>
+        </div>
+
+        <p style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px">Caption Check</p>
+        <div class="caption-checklist" style="margin-bottom:16px">
+          <div class="cap-item pass"><span class="cap-icon">✅</span><span class="cap-text">#ABCBeauty</span><span class="cap-status found">Found</span></div>
+          <div class="cap-item pass"><span class="cap-icon">✅</span><span class="cap-text">@abcbeauty</span><span class="cap-status found">Found</span></div>
+          <div class="cap-item fail"><span class="cap-icon">❌</span><span class="cap-text">#ad (Ad Disclosure)</span><span class="cap-status missing">Missing</span></div>
+        </div>
+
+        <div class="divider"></div>
+        <p style="font-size:13px;color:#555;margin-bottom:14px">Fix the issues and resubmit your post URL.</p>
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:13px;font-weight:500;color:#555;margin-bottom:5px">TikTok Post URL *</label>
+          <input style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none" value="https://www.tiktok.com/@lucyhan/video/1234567890">
+        </div>
+        <button class="btn">Resubmit Content</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- 무가 SCENARIO 3: 검수 통과                           -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <div id="s-unpaid-pass" class="scenario" style="display:none">
+    <div class="card">
+      <div class="card-header-static"><span>✅ Content Submitted</span></div>
+      <div class="card-body">
+        <div class="alert-success" style="margin-bottom:14px">All checks passed. You're all done!</div>
+
+        <p style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px">Content Check</p>
+        <div style="margin-bottom:16px">
+          <div class="content-check-item">
+            <span class="cap-icon">✅</span>
+            <div class="check-desc">Video format</div>
+            <span class="check-badge pass">Pass</span>
+          </div>
+          <div class="content-check-item">
+            <span class="cap-icon">✅</span>
+            <div class="check-desc">Not a dedicated post</div>
+            <span class="check-badge pass">Pass</span>
+          </div>
+          <div class="content-check-item">
+            <span class="cap-icon">✅</span>
+            <div class="check-desc">Not a simple unboxing</div>
+            <span class="check-badge pass">Pass</span>
+          </div>
+        </div>
+
+        <p style="font-size:13px;font-weight:600;color:#333;margin-bottom:8px">Caption Check</p>
+        <div class="caption-checklist" style="margin-bottom:14px">
+          <div class="cap-item pass"><span class="cap-icon">✅</span><span class="cap-text">#ABCBeauty</span><span class="cap-status found">Found</span></div>
+          <div class="cap-item pass"><span class="cap-icon">✅</span><span class="cap-text">@abcbeauty</span><span class="cap-status found">Found</span></div>
+          <div class="cap-item pass"><span class="cap-icon">✅</span><span class="cap-text">#ad (Ad Disclosure)</span><span class="cap-status found">Found</span></div>
+        </div>
+
+        <div class="divider"></div>
+        <div style="font-size:13px;color:#888">
+          <span style="font-weight:500">Post URL:</span>
+          <a href="#" style="color:#111;text-decoration:underline;margin-left:4px">https://www.tiktok.com/@lucyhan/video/1234567890</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function show(id) {
+  document.querySelectorAll('.scenario').forEach(el => el.style.display = 'none');
+  document.getElementById('s-' + id).style.display = 'block';
+  document.querySelectorAll('.scenario-toggle button').forEach(btn => btn.classList.remove('active'));
+  event.target.classList.add('active');
+}
+function toggleDetail(id) {
+  const el = document.getElementById('detail-' + id);
+  const ch = document.getElementById('chev-' + id);
+  const isHidden = el.classList.toggle('hidden');
+  if (ch) ch.style.transform = isHidden ? '' : 'rotate(180deg)';
+}
+</script>
+
+</body>
+</html>

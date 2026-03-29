@@ -352,3 +352,62 @@ def get_campaigns_summary() -> list[dict]:
         del c["scores"]
         summaries.append(c)
     return summaries
+
+
+# ── Content Checks (무가 콘텐츠 검수) ──────────────────────
+
+
+def create_content_check(
+    campaign_name: str,
+    creator_name: str,
+    url: str,
+    caption: str = "",
+    post_type: str = "",
+    ci_id: Optional[str] = None,
+) -> int:
+    """Create a pending content check job. Returns the row ID."""
+    sb = _get_client()
+    data: dict = {
+        "campaign_name": campaign_name,
+        "creator_name": creator_name,
+        "url": url,
+        "caption": caption,
+        "post_type": post_type,
+        "status": "pending",
+    }
+    if ci_id:
+        data["ci_id"] = ci_id
+    result = sb.table("vc_content_checks").insert(data).execute()
+    return result.data[0]["id"]
+
+
+def get_pending_content_checks(limit: int = 10) -> list[dict]:
+    """Get pending content check jobs for the worker to process."""
+    sb = _get_client()
+    result = (
+        sb.table("vc_content_checks")
+        .select("*")
+        .eq("status", "pending")
+        .order("created_at")
+        .limit(limit)
+        .execute()
+    )
+    return result.data
+
+
+def update_content_check(check_id: int, status: str, result_json: Optional[dict] = None, error: Optional[str] = None) -> None:
+    """Update a content check job status and result."""
+    sb = _get_client()
+    data: dict = {"status": status, "updated_at": datetime.utcnow().isoformat()}
+    if result_json is not None:
+        data["result_json"] = result_json
+    if error is not None:
+        data["error"] = error
+    sb.table("vc_content_checks").update(data).eq("id", check_id).execute()
+
+
+def get_content_check(check_id: int) -> Optional[dict]:
+    """Get a content check by ID."""
+    sb = _get_client()
+    result = sb.table("vc_content_checks").select("*").eq("id", check_id).limit(1).execute()
+    return result.data[0] if result.data else None
