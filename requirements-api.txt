@@ -1,0 +1,26 @@
+# ── FastAPI ──
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+
+# ── 기존 검수 엔진 의존성 ──
+anthropic>=0.40.0
+ffmpeg-python>=0.2.0
+openai>=1.0.0
+PyMuPDF>=1.24.0
+openpyxl>=3.1.0
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+Pillow>=10.0.0
+requests>=2.31.0
+gdown>=5.0.0
+supabase>=2.0.0
+json-repair>=0.30.0
+yt-dlp>=2024.1.0
+
+# ── Pipeline (Drive → Sheets → Slack) ──
+google-auth>=2.28.0
+google-auth-oauthlib>=1.2.0
+google-auth-httplib2>=0.2.0
+google-api-python-client>=2.120.0
+slack-sdk>=3.27.0
