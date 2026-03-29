@@ -3,6 +3,7 @@ Video Review Checker — FastAPI Backend
 기존 Streamlit 검수 로직을 그대로 재활용, API로만 노출
 """
 import asyncio
+import threading
 import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -33,8 +34,17 @@ from pipeline.video_reviewer import run_pipeline_review
 jobs: dict[str, dict] = {}
 
 
+def _start_content_check_worker():
+    """콘텐츠 체크 워커를 백그라운드 스레드에서 실행."""
+    from pipeline.content_check_worker import run_loop
+    worker = threading.Thread(target=run_loop, args=(30,), daemon=True)
+    worker.start()
+    print("✓ Content check worker started (polling every 30s)")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _start_content_check_worker()
     yield
     jobs.clear()
 
