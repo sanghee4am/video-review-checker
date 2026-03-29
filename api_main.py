@@ -24,6 +24,8 @@ from models.review_result import ReviewReport
 from processors.video_processor import process_video
 from processors.guideline_parser import parse_guideline
 from analyzer.compliance_checker import run_compliance_check
+from analyzer.content_checker import check_content
+from analyzer.upload_checker import fetch_post_content, check_upload
 from pipeline.video_reviewer import run_pipeline_review
 
 
@@ -318,3 +320,58 @@ async def trigger_pipeline(background_tasks: BackgroundTasks):
 
     background_tasks.add_task(_run)
     return {"job_id": job_id, "status": "queued"}
+
+
+# ═══════════════════════════════════════════
+# 콘텐츠 검수 (Unpaid 캠페인)
+# ═══════════════════════════════════════════
+class ContentCheckRequest(BaseModel):
+    url: str
+    campaign_name: str
+
+@app.post("/api/content-check")
+async def check_content_endpoint(req: ContentCheckRequest):
+    """Check posted content for unpaid campaigns (image/dedicated/unboxing/caption)."""
+    result = load_guideline_by_name(req.campaign_name)
+    if not result:
+        raise HTTPException(404, f"가이드라인 '{req.campaign_name}'을 찾을 수 없습니다")
+    _gid, guideline = result
+    raw = check_content(req.url, guideline)
+    # 프론트 호환 형식으로 매핑
+    checks = []
+    for c in raw.get("content_checks", []):
+        checks.append({
+            "name": c["check"].replace("_", " ").title(),
+            "passed": c["status"] == "pass",
+            "message": c["detail"],
+        })
+    caption = raw.get("caption_check", {})
+    for item in caption.get("checks", []):
+        checks.append({
+            "name": item["element"],
+            "passed": item["status"] == "found",
+            "message": item["detail"],
+        })
+    return {"passed": raw["all_passed"], "checks": checks}
+
+
+# ═══════════════════════════════════════════
+# 캡션 검수 (Paid 캠페인)
+# ═══════════════════════════════════════════
+@app.post("/api/caption-check")
+async def caption_check_endpoint(req: ContentCheckRequest):
+    """Check caption/hashtags for paid campaigns after content submission."""
+    result = load_guideline_by_name(req.campaign_name)
+    if not result:
+        raise HTTPException(404, f"가이드라인 '{req.campaign_name}'을 찾을 수 없습니다")
+    _gid, guideline = result
+    _platform, post_content = fetch_post_content(req.url)
+    raw = check_upload(post_content, guideline)
+    # 프론트 호환 형식으로 매핑
+    results = []
+    for item in raw.get("checks", []):
+        results.append({
+            "item": item["element"],
+            "found": item["status"] == "found",
+        })
+    return {"passed": raw["all_passed"], "results": results}
