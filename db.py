@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from typing import Optional
 
-import streamlit as st
+from functools import lru_cache
 from supabase import create_client, Client
 
 from config import SUPABASE_URL, SUPABASE_KEY
@@ -13,7 +13,7 @@ from models.guideline import ParsedGuideline
 from models.review_result import ReviewReport
 
 
-@st.cache_resource
+@lru_cache(maxsize=1)
 def _get_client() -> Client:
     """Get Supabase client (cached — single instance reused across reruns)."""
     if not SUPABASE_URL or not SUPABASE_KEY:
