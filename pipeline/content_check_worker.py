@@ -134,23 +134,33 @@ def process_one(job: dict) -> None:
     print(f"  ✓ Done: {'PASS' if all_passed else 'FAIL'}")
 
 
-def run_once() -> int:
-    """Process all pending jobs. Returns number processed."""
+def run_once(max_workers: int = 3) -> int:
+    """Process all pending jobs in parallel. Returns number processed."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     jobs = get_pending_content_checks(limit=10)
     if not jobs:
         print("No pending content checks.")
         return 0
 
-    print(f"Found {len(jobs)} pending content check(s)")
+    print(f"Found {len(jobs)} pending content check(s) (parallel={max_workers})")
     processed = 0
-    for job in jobs:
+
+    def _safe_process(job):
         try:
             process_one(job)
-            processed += 1
+            return True
         except Exception as e:
             print(f"[{job['id']}] Fatal error: {e}")
             traceback.print_exc()
             update_content_check(job["id"], "failed", error=str(e)[:500])
+            return False
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_safe_process, job): job for job in jobs}
+        for future in as_completed(futures):
+            if future.result():
+                processed += 1
     return processed
 
 
