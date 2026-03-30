@@ -181,8 +181,11 @@ def _run_review_job(
     jobs[job_id]["status"] = "processing"
     jobs[job_id]["progress"] = "영상 처리 시작"
     try:
-        def progress_cb(msg: str):
-            jobs[job_id]["progress"] = msg
+        def progress_cb(step_or_msg, total=None, msg=None):
+            if msg is not None:
+                jobs[job_id]["progress"] = msg
+            else:
+                jobs[job_id]["progress"] = str(step_or_msg)
 
         # 가이드라인 로드
         print(f"[REVIEW JOB] Loading guideline gl_id={gl_id}")
