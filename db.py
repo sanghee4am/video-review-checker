@@ -21,83 +21,61 @@ def _get_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-# ── Guidelines ──────────────────────────────────────────
+# ── Guidelines (guidelines 테이블의 gl_parsed_json 사용) ──
 
 
-def save_guideline(campaign_name: str, guideline: ParsedGuideline) -> int:
-    """Save a parsed guideline to Supabase. Returns the row ID."""
+def save_guideline(gl_id: str, guideline: ParsedGuideline) -> str:
+    """Save a parsed guideline to guidelines.gl_parsed_json. Returns the gl_id."""
     sb = _get_client()
-    data = {
-        "campaign_name": campaign_name,
-        "guideline_json": guideline.model_dump(),
-    }
-    # Check if campaign already exists → update
-    existing = (
-        sb.table("vc_guidelines")
-        .select("id")
-        .eq("campaign_name", campaign_name)
-        .execute()
-    )
-    if existing.data:
-        row_id = existing.data[0]["id"]
-        sb.table("vc_guidelines").update({
-            "guideline_json": guideline.model_dump(),
-            "updated_at": datetime.now().isoformat(),
-        }).eq("id", row_id).execute()
-        return row_id
-    else:
-        result = sb.table("vc_guidelines").insert(data).execute()
-        return result.data[0]["id"]
+    sb.table("guidelines").update({
+        "gl_parsed_json": guideline.model_dump(),
+        "updated_at": datetime.now().isoformat(),
+    }).eq("id", gl_id).execute()
+    return gl_id
 
 
 def list_guidelines() -> list[dict]:
-    """Return list of saved guidelines: [{id, campaign_name, created_at}, ...]."""
+    """Return list of guidelines that have parsed JSON.
+
+    Joins through campaigns to provide campaign_name for display.
+    """
     sb = _get_client()
     result = (
-        sb.table("vc_guidelines")
-        .select("id, campaign_name, created_at, updated_at")
+        sb.table("guidelines")
+        .select("id, gl_campaign_id, gl_header_text, gl_parsed_json, created_at, updated_at, campaigns(cam_brand_name, cam_product_name)")
+        .not_.is_("gl_parsed_json", "null")
         .order("created_at", desc=True)
         .limit(100)
         .execute()
     )
+    # Add campaign_name for backward compatibility
+    for row in result.data:
+        cam = row.get("campaigns") or {}
+        row["campaign_name"] = " ".join(filter(None, [cam.get("cam_brand_name"), cam.get("cam_product_name")])) or row.get("gl_header_text") or "Unknown"
     return result.data
 
 
-def load_guideline(guideline_id: int) -> tuple[str, ParsedGuideline]:
-    """Load a guideline by ID. Returns (campaign_name, ParsedGuideline)."""
+def load_guideline(gl_id: str) -> Optional[ParsedGuideline]:
+    """Load a parsed guideline by gl_id. Returns ParsedGuideline or None."""
     sb = _get_client()
     result = (
-        sb.table("vc_guidelines")
-        .select("campaign_name, guideline_json")
-        .eq("id", guideline_id)
+        sb.table("guidelines")
+        .select("gl_parsed_json")
+        .eq("id", gl_id)
         .single()
         .execute()
     )
-    row = result.data
-    guideline = ParsedGuideline.model_validate(row["guideline_json"])
-    return row["campaign_name"], guideline
-
-
-def load_guideline_by_name(campaign_name: str) -> Optional[tuple[int, ParsedGuideline]]:
-    """Load a guideline by campaign name. Returns (id, ParsedGuideline) or None."""
-    sb = _get_client()
-    result = (
-        sb.table("vc_guidelines")
-        .select("id, guideline_json")
-        .eq("campaign_name", campaign_name)
-        .execute()
-    )
-    if not result.data:
+    if not result.data or not result.data.get("gl_parsed_json"):
         return None
-    row = result.data[0]
-    guideline = ParsedGuideline.model_validate(row["guideline_json"])
-    return row["id"], guideline
+    return ParsedGuideline.model_validate(result.data["gl_parsed_json"])
 
 
-def delete_guideline(guideline_id: int) -> None:
-    """Delete a guideline by ID."""
+def delete_guideline_parsed(gl_id: str) -> None:
+    """Clear gl_parsed_json for a guideline (does not delete the guidelines row)."""
     sb = _get_client()
-    sb.table("vc_guidelines").delete().eq("id", guideline_id).execute()
+    sb.table("guidelines").update({
+        "gl_parsed_json": None,
+    }).eq("id", gl_id).execute()
 
 
 # ── Reviews ─────────────────────────────────────────────
@@ -108,7 +86,8 @@ def save_review(
     creator_name: str,
     report: ReviewReport,
     round_num: int = 1,
-    campaign_id: Optional[int] = None,
+    gl_id: Optional[str] = None,
+    ci_id: Optional[str] = None,
     video_url: Optional[str] = None,
 ) -> int:
     """Save a review result. Auto-approves if score >= 90 and no manual flags. Returns the row ID."""
@@ -121,8 +100,10 @@ def save_review(
         "overall_status": report.overall_status,
         "report_json": report.model_dump(),
     }
-    if campaign_id:
-        data["campaign_id"] = campaign_id
+    if gl_id:
+        data["gl_id"] = gl_id
+    if ci_id:
+        data["ci_id"] = ci_id
     if video_url:
         data["video_url"] = video_url
     # 90+ with no manual flags → auto-approve
@@ -364,6 +345,7 @@ def create_content_check(
     caption: str = "",
     post_type: str = "",
     ci_id: Optional[str] = None,
+    gl_id: Optional[str] = None,
 ) -> int:
     """Create a pending content check job. Returns the row ID."""
     sb = _get_client()
@@ -377,6 +359,8 @@ def create_content_check(
     }
     if ci_id:
         data["ci_id"] = ci_id
+    if gl_id:
+        data["gl_id"] = gl_id
     result = sb.table("vc_content_checks").insert(data).execute()
     return result.data[0]["id"]
 

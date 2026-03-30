@@ -1093,7 +1093,8 @@ else:
 
 # Load selected guideline
 selected_row = next(row for row in campaigns if row["campaign_name"] == selected_campaign)
-campaign_name, guideline = db.load_guideline(selected_row["id"])
+campaign_name = selected_row["campaign_name"]
+guideline = db.load_guideline(selected_row["id"])
 
 # Show brief guideline info
 with st.expander(t("guideline_summary"), expanded=False):

@@ -69,14 +69,135 @@ def fetch_from_url(url: str) -> Tuple[str, bytes]:
     elif url_type == "gslides":
         return _fetch_gslides(url)
     elif url_type == "notion":
-        raise ValueError(
-            "Notion 페이지는 직접 다운로드가 어렵습니다.\n"
-            "Notion에서 PDF로 내보내기 후 파일을 업로드해주세요.\n"
-            "(페이지 우측 상단 ··· → Export → PDF)"
-        )
+        return _fetch_notion(url)
     else:
         # Try direct download
         return _fetch_direct(url)
+
+
+def _extract_notion_page_id(url: str) -> Optional[str]:
+    """Extract 32-char hex page ID from Notion URL and format as UUID."""
+    # Try to find 32-char hex ID in the URL (with or without dashes)
+    match = re.search(r"([a-f0-9]{32})", url.replace("-", ""))
+    if not match:
+        # Try UUID format directly
+        match = re.search(r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})", url)
+        if match:
+            return match.group(1)
+        return None
+    pid = match.group(1)
+    return f"{pid[:8]}-{pid[8:12]}-{pid[12:16]}-{pid[16:20]}-{pid[20:]}"
+
+
+def _fetch_notion_blocks(page_id_uuid: str) -> list[dict]:
+    """Fetch all blocks from a public Notion page via internal API."""
+    all_blocks = {}
+    cursor = {"stack": []}
+    for chunk_num in range(10):  # max 10 chunks
+        resp = requests.post(
+            "https://www.notion.so/api/v3/loadPageChunk",
+            json={
+                "page": {"id": page_id_uuid},
+                "limit": 200,
+                "cursor": cursor,
+                "chunkNumber": chunk_num,
+                "verticalColumns": False,
+            },
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            break
+        data = resp.json()
+        blocks = data.get("recordMap", {}).get("block", {})
+        if not blocks:
+            break
+        all_blocks.update(blocks)
+        cursor = data.get("cursor", {"stack": []})
+        if not cursor.get("stack"):
+            break
+    return all_blocks
+
+
+def _notion_blocks_to_markdown(blocks: dict) -> str:
+    """Convert Notion blocks to markdown text."""
+    lines = []
+    for bid, bdata in blocks.items():
+        val = bdata.get("value", {})
+        btype = val.get("type", "")
+        props = val.get("properties", {})
+        title_parts = props.get("title", [])
+
+        text = ""
+        for part in title_parts:
+            if isinstance(part, list) and len(part) > 0:
+                text += str(part[0])
+
+        if not text.strip():
+            continue
+
+        if btype == "page":
+            lines.append(f"# {text}")
+        elif btype == "header":
+            lines.append(f"## {text}")
+        elif btype == "sub_header":
+            lines.append(f"### {text}")
+        elif btype == "sub_sub_header":
+            lines.append(f"#### {text}")
+        elif btype == "bulleted_list":
+            lines.append(f"- {text}")
+        elif btype == "numbered_list":
+            lines.append(f"1. {text}")
+        elif btype == "to_do":
+            checked = props.get("checked", [["No"]])[0][0]
+            mark = "x" if checked == "Yes" else " "
+            lines.append(f"- [{mark}] {text}")
+        elif btype == "toggle":
+            lines.append(f"▶ {text}")
+        elif btype == "quote":
+            lines.append(f"> {text}")
+        elif btype == "callout":
+            lines.append(f"📌 {text}")
+        elif btype == "divider":
+            lines.append("---")
+        else:
+            lines.append(text)
+    return "\n".join(lines)
+
+
+def _fetch_notion(url: str) -> Tuple[str, bytes]:
+    """Fetch content from a public Notion page as markdown text (returned as CSV bytes for parser compatibility)."""
+    page_id = _extract_notion_page_id(url)
+    if not page_id:
+        raise ValueError("Notion 페이지 ID를 URL에서 찾을 수 없습니다.")
+
+    blocks = _fetch_notion_blocks(page_id)
+    if not blocks:
+        raise ValueError(
+            "Notion 페이지 내용을 가져올 수 없습니다.\n"
+            "페이지가 '웹에 게시(Publish to web)' 설정인지 확인해주세요."
+        )
+
+    markdown = _notion_blocks_to_markdown(blocks)
+    if len(markdown.strip()) < 50:
+        raise ValueError("Notion 페이지에서 충분한 텍스트를 추출하지 못했습니다.")
+
+    return "notion_guideline.csv", markdown.encode("utf-8")
+
+
+def fetch_notion_by_page_id(page_id_raw: str) -> Tuple[str, bytes]:
+    """Fetch Notion page by raw page ID (32-char hex, no dashes). For direct use without URL."""
+    pid = page_id_raw.replace("-", "")
+    page_id_uuid = f"{pid[:8]}-{pid[8:12]}-{pid[12:16]}-{pid[16:20]}-{pid[20:]}"
+    blocks = _fetch_notion_blocks(page_id_uuid)
+    if not blocks:
+        raise ValueError(
+            f"Notion 페이지 내용을 가져올 수 없습니다 (page_id={page_id_raw}).\n"
+            "페이지가 '웹에 게시' 설정인지 확인해주세요."
+        )
+    markdown = _notion_blocks_to_markdown(blocks)
+    if len(markdown.strip()) < 50:
+        raise ValueError("Notion 페이지에서 충분한 텍스트를 추출하지 못했습니다.")
+    return "notion_guideline.csv", markdown.encode("utf-8")
 
 
 def _fetch_gdrive(url: str) -> Tuple[str, bytes]:

@@ -43,7 +43,7 @@ def _process_file(drive_file: DriveFile) -> None:
 
     sheet_id = config["sheet_id"]
     sheet_tab = config["sheet_tab"]
-    guideline_name = config["guideline_name"]
+    gl_id = config["gl_id"]
     sheet_url = _get_sheet_url(sheet_id)
 
     print(f"\n{'='*60}")
@@ -72,7 +72,7 @@ def _process_file(drive_file: DriveFile) -> None:
             filename=filename,
             campaign_name=campaign_name,
             tiktok_handle=tiktok_handle,
-            guideline_name=guideline_name,
+            gl_id=gl_id,
         )
 
         # ── Step 4: N열(새벽네시 코멘트)에 AI 검수 결과 기입 ─

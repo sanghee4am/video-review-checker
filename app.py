@@ -784,9 +784,9 @@ with tab1:
             st.caption("크리에이터 이름을 입력하면 검수 업로드 전용 링크가 생성됩니다.")
 
             saved_campaign_name = g.title or g.product_name or ""
-            saved_gl = db.load_guideline_by_name(saved_campaign_name) if saved_campaign_name else None
+            all_saved = db.list_guidelines()
+            saved_gl = next((row for row in all_saved if row.get("campaign_name") == saved_campaign_name), None) if saved_campaign_name else None
             if not saved_gl:
-                all_saved = db.list_guidelines()
                 if all_saved:
                     link_campaign = st.selectbox(
                         "캠페인 선택",

@@ -214,13 +214,14 @@ if not campaign_name:
     st.info("캠페인 링크를 통해 접근해주세요.\n\n예: `?campaign=캠페인명`")
     st.stop()
 
-# Verify campaign exists
-guideline_result = db.load_guideline_by_name(campaign_name)
-if guideline_result is None:
+# Verify campaign exists (search by campaign_name through list_guidelines)
+_all_gl = db.list_guidelines()
+_matched_gl = next((row for row in _all_gl if row.get("campaign_name") == campaign_name), None)
+if _matched_gl is None:
     st.error(f"'{campaign_name}' 캠페인을 찾을 수 없습니다. 링크를 확인해주세요.")
     st.stop()
 
-_guideline_id, guideline = guideline_result
+guideline = db.load_guideline(_matched_gl["id"])
 
 
 # ===== Header =====

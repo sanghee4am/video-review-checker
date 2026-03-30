@@ -19,7 +19,7 @@ if _ROOT not in sys.path:
 from db import (
     get_pending_content_checks,
     update_content_check,
-    load_guideline_by_name,
+    load_guideline,
 )
 from analyzer.unpaid_checker import (
     download_video_from_url,
@@ -34,6 +34,7 @@ def process_one(job: dict) -> None:
     check_id = job["id"]
     url = job["url"]
     campaign_name = job["campaign_name"]
+    gl_id = job.get("gl_id") or ""
     caption = job.get("caption") or ""
     post_type = job.get("post_type") or ""
 
@@ -60,11 +61,10 @@ def process_one(job: dict) -> None:
     # 2 & 3. Video analysis (download + frames + AI)
     try:
         # Load guideline for product info
-        gl_result = load_guideline_by_name(campaign_name)
+        guideline = load_guideline(gl_id) if gl_id else None
         product_name = campaign_name
         concept = ""
-        if gl_result:
-            _gid, guideline = gl_result
+        if guideline:
             product_name = guideline.product_name or campaign_name
             concept = guideline.concept or guideline.content_objective or ""
 
@@ -113,7 +113,7 @@ def process_one(job: dict) -> None:
         })
 
     # 4. Caption elements check
-    if caption and gl_result:
+    if caption and guideline:
         try:
             cap_result = check_upload(caption, guideline)
             for item in cap_result.get("checks", []):

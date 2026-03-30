@@ -14,8 +14,8 @@ from pydantic import BaseModel
 
 # ── 기존 모듈 그대로 import ──
 from db import (
-    save_guideline, list_guidelines, load_guideline, load_guideline_by_name,
-    delete_guideline, save_review, list_reviews, load_review,
+    save_guideline, list_guidelines, load_guideline,
+    delete_guideline_parsed, save_review, list_reviews, load_review,
     get_previous_review, get_next_round, get_submission_status,
     get_creator_reviews, save_admin_decision, save_brand_feedback,
     get_latest_brand_feedback, get_campaigns_summary,
@@ -60,6 +60,15 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def log_all_requests(request, call_next):
+    """모든 요청 로깅"""
+    print(f"[HTTP] {request.method} {request.url.path} from {request.client.host}")
+    response = await call_next(request)
+    print(f"[HTTP] → {response.status_code}")
+    return response
+
+
 # ═══════════════════════════════════════════
 # Health
 # ═══════════════════════════════════════════
@@ -72,58 +81,75 @@ def health():
 # Guideline 관리
 # ═══════════════════════════════════════════
 class GuidelineUploadResult(BaseModel):
-    guideline_id: int
-    campaign_name: str
+    gl_id: str
     guideline: dict
 
 
 @app.post("/api/guidelines/upload", response_model=GuidelineUploadResult)
 async def upload_guideline(
-    campaign_name: str = Form(...),
+    gl_id: str = Form(...),
     files: list[UploadFile] = File(...),
 ):
-    """가이드라인 파일 업로드 → 파싱 → DB 저장"""
+    """가이드라인 파일 업로드 → 파싱 → guidelines.gl_parsed_json에 저장"""
     file_items: list[tuple[str, bytes]] = []
     for f in files:
         data = await f.read()
         file_items.append((f.filename or "file", data))
 
     parsed, _images = parse_guideline(file_items)
-    gid = save_guideline(campaign_name, parsed)
+    save_guideline(gl_id, parsed)
     return GuidelineUploadResult(
-        guideline_id=gid,
-        campaign_name=campaign_name,
+        gl_id=gl_id,
         guideline=parsed.model_dump(),
     )
 
 
+class NotionParseRequest(BaseModel):
+    gl_id: str
+    notion_page_id: str
+
+
+@app.post("/api/guidelines/parse-notion")
+async def parse_notion_guideline(body: NotionParseRequest):
+    """노션 공개 페이지에서 가이드라인을 파싱하여 gl_parsed_json에 저장"""
+    from processors.url_fetcher import fetch_notion_by_page_id
+    from processors.guideline_parser import parse_guideline
+
+    # 1) 노션 페이지 내용 가져오기
+    try:
+        filename, file_bytes = fetch_notion_by_page_id(body.notion_page_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    # 2) AI 파싱
+    parsed, _images = parse_guideline([(filename, file_bytes)])
+
+    # 3) DB 저장
+    save_guideline(body.gl_id, parsed)
+
+    return {
+        "gl_id": body.gl_id,
+        "guideline": parsed.model_dump(),
+    }
+
+
 @app.get("/api/guidelines")
 def api_list_guidelines():
-    """저장된 가이드라인 목록"""
+    """파싱된 가이드라인 목록"""
     return list_guidelines()
 
 
-@app.get("/api/guidelines/{guideline_id}")
-def api_get_guideline(guideline_id: int):
-    result = load_guideline(guideline_id)
-    if not result:
-        raise HTTPException(404, "Guideline not found")
-    campaign_name, parsed = result
-    return {"campaign_name": campaign_name, "guideline": parsed.model_dump()}
+@app.get("/api/guidelines/{gl_id}")
+def api_get_guideline(gl_id: str):
+    parsed = load_guideline(gl_id)
+    if not parsed:
+        raise HTTPException(404, "Guideline not found or not parsed")
+    return {"gl_id": gl_id, "guideline": parsed.model_dump()}
 
 
-@app.get("/api/guidelines/by-name/{campaign_name}")
-def api_get_guideline_by_name(campaign_name: str):
-    result = load_guideline_by_name(campaign_name)
-    if not result:
-        raise HTTPException(404, "Guideline not found")
-    gid, parsed = result
-    return {"guideline_id": gid, "guideline": parsed.model_dump()}
-
-
-@app.delete("/api/guidelines/{guideline_id}")
-def api_delete_guideline(guideline_id: int):
-    delete_guideline(guideline_id)
+@app.delete("/api/guidelines/{gl_id}")
+def api_delete_guideline(gl_id: str):
+    delete_guideline_parsed(gl_id)
     return {"ok": True}
 
 
@@ -133,7 +159,7 @@ def api_delete_guideline(guideline_id: int):
 class ReviewJobRequest(BaseModel):
     campaign_name: str
     creator_name: str
-    guideline_name: Optional[str] = None  # None이면 campaign_name으로 조회
+    gl_id: str  # guidelines 테이블의 UUID
 
 
 class ReviewJobResponse(BaseModel):
@@ -147,9 +173,11 @@ def _run_review_job(
     filename: str,
     campaign_name: str,
     creator_name: str,
-    guideline_name: str,
+    gl_id: str,
 ):
     """백그라운드에서 검수 실행"""
+    import traceback as _tb
+    print(f"[REVIEW JOB] START job={job_id} gl_id={gl_id} campaign={campaign_name} creator={creator_name}")
     jobs[job_id]["status"] = "processing"
     jobs[job_id]["progress"] = "영상 처리 시작"
     try:
@@ -157,13 +185,13 @@ def _run_review_job(
             jobs[job_id]["progress"] = msg
 
         # 가이드라인 로드
-        gl_result = load_guideline_by_name(guideline_name)
-        if not gl_result:
+        print(f"[REVIEW JOB] Loading guideline gl_id={gl_id}")
+        guideline = load_guideline(gl_id)
+        print(f"[REVIEW JOB] Guideline loaded: {guideline is not None}")
+        if not guideline:
             jobs[job_id]["status"] = "failed"
-            jobs[job_id]["error"] = f"가이드라인 '{guideline_name}' 을 찾을 수 없습니다"
+            jobs[job_id]["error"] = f"가이드라인을 찾을 수 없습니다 (gl_id={gl_id})"
             return
-
-        _gid, guideline = gl_result
 
         # 이전 리뷰 조회 (재검수인 경우)
         prev = get_previous_review(campaign_name, creator_name)
@@ -200,8 +228,7 @@ def _run_review_job(
             creator_name=creator_name,
             report=report,
             round_num=review_round,
-            campaign_id=None,
-            video_url=None,
+            gl_id=gl_id,
         )
 
         jobs[job_id]["status"] = "completed"
@@ -214,6 +241,8 @@ def _run_review_job(
         }
 
     except Exception as e:
+        print(f"[REVIEW JOB] FAILED: {e}")
+        _tb.print_exc()
         jobs[job_id]["status"] = "failed"
         jobs[job_id]["error"] = str(e)
 
@@ -224,17 +253,16 @@ async def start_review(
     video: UploadFile = File(...),
     campaign_name: str = Form(...),
     creator_name: str = Form(...),
-    guideline_name: Optional[str] = Form(None),
+    gl_id: str = Form(...),
 ):
     """영상 업로드 → 백그라운드 검수 Job 시작"""
     job_id = str(uuid.uuid4())
     video_bytes = await video.read()
-    gl_name = guideline_name or campaign_name
 
     jobs[job_id] = {"status": "queued", "progress": "대기 중"}
     background_tasks.add_task(
         _run_review_job, job_id, video_bytes, video.filename or "video.mp4",
-        campaign_name, creator_name, gl_name,
+        campaign_name, creator_name, gl_id,
     )
     return ReviewJobResponse(job_id=job_id, status="queued")
 
@@ -337,15 +365,14 @@ async def trigger_pipeline(background_tasks: BackgroundTasks):
 # ═══════════════════════════════════════════
 class ContentCheckRequest(BaseModel):
     url: str
-    campaign_name: str
+    gl_id: str  # guidelines 테이블의 UUID
 
 @app.post("/api/content-check")
 async def check_content_endpoint(req: ContentCheckRequest):
     """Check posted content for unpaid campaigns (image/dedicated/unboxing/caption)."""
-    result = load_guideline_by_name(req.campaign_name)
-    if not result:
-        raise HTTPException(404, f"가이드라인 '{req.campaign_name}'을 찾을 수 없습니다")
-    _gid, guideline = result
+    guideline = load_guideline(req.gl_id)
+    if not guideline:
+        raise HTTPException(404, f"가이드라인을 찾을 수 없습니다 (gl_id={req.gl_id})")
     raw = check_content(req.url, guideline)
     # 프론트 호환 형식으로 매핑
     checks = []
@@ -371,10 +398,9 @@ async def check_content_endpoint(req: ContentCheckRequest):
 @app.post("/api/caption-check")
 async def caption_check_endpoint(req: ContentCheckRequest):
     """Check caption/hashtags for paid campaigns after content submission."""
-    result = load_guideline_by_name(req.campaign_name)
-    if not result:
-        raise HTTPException(404, f"가이드라인 '{req.campaign_name}'을 찾을 수 없습니다")
-    _gid, guideline = result
+    guideline = load_guideline(req.gl_id)
+    if not guideline:
+        raise HTTPException(404, f"가이드라인을 찾을 수 없습니다 (gl_id={req.gl_id})")
     _platform, post_content = fetch_post_content(req.url)
     raw = check_upload(post_content, guideline)
     # 프론트 호환 형식으로 매핑

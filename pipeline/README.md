@@ -101,18 +101,18 @@ CAMPAIGN_CONFIGS = {
     "Magis Lene": {
         "sheet_id": "1DWgBz5ayhb_...",
         "sheet_tab": "소재 수급 리스트",
-        "guideline_name": "Magis Lene",   # vc_guidelines의 campaign_name
+        "gl_id": "...",   # guidelines 테이블의 UUID
     },
     # 여기에 추가 ↓
     "New Brand": {
         "sheet_id": "스프레드시트_ID",
         "sheet_tab": "소재 수급 리스트",
-        "guideline_name": "New Brand",
+        "gl_id": "...",   # guidelines 테이블의 UUID
     },
 }
 ```
 
-그리고 **어드민 검수기**에서 해당 캠페인의 가이드라인을 등록해야 AI 검수가 작동함.
+그리고 **guidelines 테이블**에 해당 캠페인의 `gl_parsed_json`이 등록되어야 AI 검수가 작동함.
 
 ---
 

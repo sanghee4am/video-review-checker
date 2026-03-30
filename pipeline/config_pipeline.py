@@ -51,7 +51,7 @@ CAMPAIGN_CONFIGS = {
     "Magis Lene": {
         "sheet_id": "1DWgBz5ayhb_KRpkWU_1M92vFmLa8anERisGU154_1yY",
         "sheet_tab": "소재 수급 리스트",
-        "guideline_name": "Magis Lene",  # vc_guidelines의 campaign_name
+        "gl_id": "3277ee69-2e40-4629-ba31-10cd200bfc73",  # Magis Lene Cell Precieux Eye Cream
         "drive_folder_1st": "1i0oF_0cf9ebcUUCCpAJBLGiCcyWwtHjs",  # 1st Draft 폴더
         "drive_folder_2nd": "1b76QTr66XCDSgryev-RUdQytt93lx5gJ",  # 2nd Draft 폴더
     },
@@ -59,7 +59,7 @@ CAMPAIGN_CONFIGS = {
     # "Brand Name": {
     #     "sheet_id": "...",
     #     "sheet_tab": "소재 수급 리스트",
-    #     "guideline_name": "...",
+    #     "gl_id": "...",  # guidelines 테이블의 UUID
     #     "drive_folder_1st": "...",
     #     "drive_folder_2nd": "...",
     # },

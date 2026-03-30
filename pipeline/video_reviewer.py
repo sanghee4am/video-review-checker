@@ -19,7 +19,7 @@ from typing import Optional
 
 from processors.video_processor import process_video
 from analyzer.compliance_checker import run_compliance_check
-from db import save_review, load_guideline_by_name, get_previous_review
+from db import save_review, load_guideline, get_previous_review
 from models.review_result import ReviewReport
 
 
@@ -40,7 +40,7 @@ def run_pipeline_review(
     filename: str,
     campaign_name: str,
     tiktok_handle: str,
-    guideline_name: str,
+    gl_id: str,
 ) -> ReviewResult:
     """영상 bytes → AI 검수 → DB 저장 → 결과 반환.
 
@@ -49,7 +49,7 @@ def run_pipeline_review(
         filename:       파일명 (확장자 포함)
         campaign_name:  캠페인명 (예: "Magis Lene")
         tiktok_handle:  틱톡 핸들 (@없이, 예: "lisasvoging")
-        guideline_name: vc_guidelines의 campaign_name (보통 캠페인명과 동일)
+        gl_id:          guidelines 테이블의 UUID
 
     Returns:
         ReviewResult
@@ -59,13 +59,12 @@ def run_pipeline_review(
         RuntimeError: 영상 처리 실패 시
     """
     # 1. 가이드라인 로드
-    guideline_result = load_guideline_by_name(guideline_name)
-    if guideline_result is None:
+    guideline = load_guideline(gl_id)
+    if guideline is None:
         raise ValueError(
-            f"가이드라인 없음: '{guideline_name}' — "
-            f"어드민에서 먼저 가이드라인을 등록해주세요."
+            f"가이드라인 없음: gl_id='{gl_id}' — "
+            f"guidelines 테이블에 gl_parsed_json을 먼저 등록해주세요."
         )
-    _guideline_id, guideline = guideline_result
 
     # 2. 이전 검수 이력 조회 (재검수 시 비교용)
     previous_result = get_previous_review(campaign_name, tiktok_handle)
@@ -111,6 +110,7 @@ def run_pipeline_review(
         creator_name=tiktok_handle,
         report=report,
         round_num=review_round,
+        gl_id=gl_id,
     )
     print(f"[video_reviewer] DB 저장 완료: review_id={review_id}")
 
