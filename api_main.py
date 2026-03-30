@@ -250,6 +250,110 @@ def _run_review_job(
         jobs[job_id]["error"] = str(e)
 
 
+class ReviewByPathRequest(BaseModel):
+    ci_id: str
+    storage_path: str
+
+
+@app.post("/api/review-by-path", response_model=ReviewJobResponse)
+async def start_review_by_path(
+    body: ReviewByPathRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Storage 경로로 자동 검수 시작 (Workers에서 호출)"""
+    from db import get_ci_info, download_from_storage
+
+    ci = get_ci_info(body.ci_id)
+    if not ci:
+        raise HTTPException(404, f"campaign_influencer not found: {body.ci_id}")
+
+    gl_id = ci["ci_guideline_id"]
+    creator_name = ci["ci_username"]
+    campaign_name = ci.get("campaigns", {}).get("cam_name", "unknown")
+    is_first = not bool(ci.get("ci_1st_draft_urls"))
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {"status": "queued", "progress": "대기 중"}
+
+    def _run():
+        import traceback as _tb
+        print(f"[AUTO-REVIEW] START job={job_id} ci_id={body.ci_id} path={body.storage_path}")
+        jobs[job_id]["status"] = "processing"
+        try:
+            # Storage에서 영상 다운로드
+            jobs[job_id]["progress"] = "영상 다운로드 중..."
+            video_bytes = download_from_storage(body.storage_path)
+            filename = body.storage_path.split("/")[-1] or "video.mp4"
+
+            # 기존 검수 로직 재활용
+            guideline = load_guideline(gl_id)
+            if not guideline:
+                jobs[job_id]["status"] = "failed"
+                jobs[job_id]["error"] = f"가이드라인 없음 (gl_id={gl_id})"
+                return
+
+            prev = get_previous_review(campaign_name, creator_name)
+            previous_report = prev[0] if prev else None
+            review_round = (prev[1] + 1) if prev else 1
+            brand_feedback = get_latest_brand_feedback(campaign_name, creator_name)
+
+            def progress_cb(step_or_msg, total=None, msg=None):
+                if msg is not None:
+                    jobs[job_id]["progress"] = msg
+                else:
+                    jobs[job_id]["progress"] = str(step_or_msg)
+
+            jobs[job_id]["progress"] = "영상 프레임 추출 & STT 진행 중..."
+            processed = process_video(video_bytes, filename)
+
+            jobs[job_id]["progress"] = "AI 검수 진행 중..."
+            report = run_compliance_check(
+                guideline=guideline,
+                guideline_images=[],
+                video=processed,
+                progress_callback=progress_cb,
+                memo=None,
+                brand_feedback=brand_feedback,
+                previous_report=previous_report,
+                review_round=review_round,
+            )
+
+            report.attach_thumbnails(processed)
+
+            review_id = save_review(
+                campaign_name=campaign_name,
+                creator_name=creator_name,
+                report=report,
+                round_num=review_round,
+                gl_id=gl_id,
+                ci_id=body.ci_id,
+            )
+
+            # 점수에 따라 ci_status 업데이트
+            from db import update_ci_status_after_review
+            update_ci_status_after_review(body.ci_id, report.overall_score, is_first)
+
+            jobs[job_id]["status"] = "completed"
+            jobs[job_id]["result"] = {
+                "review_id": review_id,
+                "score": report.overall_score,
+                "overall_status": report.overall_status,
+                "summary": report.summary,
+                "review_round": review_round,
+                "ci_status_updated": report.overall_score >= 80,
+            }
+            print(f"[AUTO-REVIEW] DONE score={report.overall_score} ci_status_updated={report.overall_score >= 80}")
+
+        except Exception as e:
+            print(f"[AUTO-REVIEW] FAILED: {e}")
+            _tb.print_exc()
+            jobs[job_id]["status"] = "failed"
+            jobs[job_id]["error"] = str(e)
+
+    background_tasks.add_task(_run)
+    return ReviewJobResponse(job_id=job_id, status="queued")
+
+
 @app.post("/api/review", response_model=ReviewJobResponse)
 async def start_review(
     background_tasks: BackgroundTasks,

@@ -116,6 +116,36 @@ def save_review(
     return result.data[0]["id"]
 
 
+def update_ci_status_after_review(ci_id: str, score: int, is_first_draft: bool):
+    """검수 점수에 따라 campaign_influencers 상태 업데이트.
+    80점+ → 1st/2nd_draft_submitted (어드민에 보임)
+    80점- → product_delivered로 유지 (크리에이터 재제출 필요)
+    """
+    sb = _get_client()
+    if score >= 80:
+        status = "1st_draft_submitted" if is_first_draft else "2nd_draft_submitted"
+        sb.table("campaign_influencers").update(
+            {"ci_status": status, "updated_at": datetime.utcnow().isoformat()}
+        ).eq("id", ci_id).execute()
+
+
+def get_ci_info(ci_id: str) -> Optional[dict]:
+    """campaign_influencers에서 검수에 필요한 정보 조회."""
+    sb = _get_client()
+    result = sb.table("campaign_influencers").select(
+        "id, ci_username, ci_guideline_id, ci_campaign_id, ci_status, "
+        "ci_1st_draft_urls, ci_2nd_draft_urls, "
+        "campaigns(cam_name)"
+    ).eq("id", ci_id).single().execute()
+    return result.data if result.data else None
+
+
+def download_from_storage(path: str) -> bytes:
+    """Supabase Storage에서 파일 다운로드."""
+    sb = _get_client()
+    return sb.storage.from_("drafts").download(path)
+
+
 def get_previous_review(
     campaign_name: str, creator_name: str
 ) -> Optional[tuple[ReviewReport, int]]:
