@@ -19,7 +19,7 @@ class SceneReview(BaseModel):
 
 class RuleReview(BaseModel):
     rule_category: str = Field(description="Rule category")
-    rule_description: str = Field(description="Rule description")
+    rule_description: str = Field(default="", description="Rule description")
     status: str = Field(description="'compliant', 'violated', or 'unclear'")
     evidence: str = Field(default="", description="Evidence (e.g. STT text quote)")
     suggestion: str = Field(default="", description="Revision suggestion if violated")

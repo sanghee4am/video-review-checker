@@ -141,9 +141,16 @@ def get_ci_info(ci_id: str) -> Optional[dict]:
 
 
 def download_from_storage(path: str) -> bytes:
-    """Supabase Storage에서 파일 다운로드."""
+    """Supabase Storage에서 파일 다운로드 (signed URL 방식)."""
+    import httpx
     sb = _get_client()
-    return sb.storage.from_("drafts").download(path)
+    signed = sb.storage.from_("drafts").create_signed_url(path, 300)
+    url = signed.get("signedURL") or signed.get("signedUrl")
+    if not url:
+        raise RuntimeError(f"Failed to create signed URL for {path}: {signed}")
+    resp = httpx.get(url, follow_redirects=True, timeout=120)
+    resp.raise_for_status()
+    return resp.content
 
 
 def get_previous_review(

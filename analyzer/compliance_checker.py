@@ -612,7 +612,7 @@ def run_compliance_check(
     Phase 1: Analyze ALL frames in batches (12 frames per batch)
     Phase 2: Final comprehensive review using all frame analyses + guideline
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=600.0)
     guideline_json = guideline.model_dump_json(indent=2)
     total_frames = len(video.frames)
     frames_per_batch = 12

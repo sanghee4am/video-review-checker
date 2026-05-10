@@ -101,7 +101,7 @@ def extract_frames(video_path: str, interval: float, output_dir: str,
                 "-q:v", "2", "-y",
                 f"{hook_dir}/frame_%04d.jpg",
             ],
-            capture_output=True, text=True,
+            capture_output=True, text=True, timeout=300,
         )
 
         # Pass 2: Body (after hook_seconds at normal interval)
@@ -113,7 +113,7 @@ def extract_frames(video_path: str, interval: float, output_dir: str,
                 "-q:v", "2", "-y",
                 f"{body_dir}/frame_%04d.jpg",
             ],
-            capture_output=True, text=True,
+            capture_output=True, text=True, timeout=300,
         )
 
         frames = []
@@ -135,7 +135,7 @@ def extract_frames(video_path: str, interval: float, output_dir: str,
                 "-q:v", "2", "-y",
                 f"{output_dir}/frame_%04d.jpg",
             ],
-            capture_output=True, text=True,
+            capture_output=True, text=True, timeout=300,
         )
 
         frame_files = sorted(Path(output_dir).glob("frame_*.jpg"))
@@ -166,7 +166,7 @@ def extract_audio(video_path: str, audio_path: str) -> str:
             "-y",
             audio_path,
         ],
-        capture_output=True, text=True,
+        capture_output=True, text=True, timeout=300,
     )
     return audio_path
 
@@ -176,7 +176,7 @@ def transcribe_audio(audio_path: str) -> tuple[str, list[TranscriptSegment]]:
 
     Returns (full_text, segments_with_timestamps).
     """
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=300.0)
 
     with open(audio_path, "rb") as f:
         response = client.audio.transcriptions.create(
