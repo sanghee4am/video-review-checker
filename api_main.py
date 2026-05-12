@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 # ── 기존 모듈 그대로 import ──
 from db import (
-    save_guideline, list_guidelines, load_guideline,
+    save_guideline, list_guidelines, load_guideline, get_guideline_source_url,
     delete_guideline_parsed, save_review, list_reviews, load_review,
     get_previous_review, get_next_round, get_submission_status,
     get_creator_reviews, save_admin_decision, save_brand_feedback,
@@ -288,9 +288,24 @@ async def start_review_by_path(
             # 기존 검수 로직 재활용
             guideline = load_guideline(gl_id)
             if not guideline:
-                jobs[job_id]["status"] = "failed"
-                jobs[job_id]["error"] = f"가이드라인 없음 (gl_id={gl_id})"
-                return
+                # gl_parsed_json 이 비어있으면, gl_source_url 이 campaign-guideline-tool
+                # 공유 URL 인 경우 자동으로 fetch + save 한 뒤 진행.
+                from processors.external_guideline import fetch_parsed_guideline_from_share_url
+                source_url = get_guideline_source_url(gl_id)
+                if source_url:
+                    try:
+                        jobs[job_id]["progress"] = "외부 가이드라인 fetch 중..."
+                        fetched = fetch_parsed_guideline_from_share_url(source_url)
+                    except Exception as fetch_err:
+                        print(f"[AUTO-REVIEW] external guideline fetch failed: {fetch_err}")
+                        fetched = None
+                    if fetched is not None:
+                        save_guideline(gl_id, fetched)
+                        guideline = fetched
+                if not guideline:
+                    jobs[job_id]["status"] = "failed"
+                    jobs[job_id]["error"] = f"가이드라인 없음 (gl_id={gl_id})"
+                    return
 
             prev = get_previous_review(campaign_name, creator_name)
             previous_report = prev[0] if prev else None

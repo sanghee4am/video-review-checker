@@ -70,6 +70,26 @@ def load_guideline(gl_id: str) -> Optional[ParsedGuideline]:
     return ParsedGuideline.model_validate(result.data["gl_parsed_json"])
 
 
+def get_guideline_source_url(gl_id: str) -> Optional[str]:
+    """Return guidelines.gl_source_url for a given gl_id, or None if absent.
+
+    Used by review-by-path to fall back to an external guideline tool
+    (campaign-guideline-tool) when gl_parsed_json has never been populated.
+    """
+    sb = _get_client()
+    result = (
+        sb.table("guidelines")
+        .select("gl_source_url")
+        .eq("id", gl_id)
+        .single()
+        .execute()
+    )
+    if not result.data:
+        return None
+    url = result.data.get("gl_source_url")
+    return url if isinstance(url, str) and url else None
+
+
 def delete_guideline_parsed(gl_id: str) -> None:
     """Clear gl_parsed_json for a guideline (does not delete the guidelines row)."""
     sb = _get_client()
