@@ -138,7 +138,11 @@ def save_review(
     elif report.overall_score < 80:
         data["admin_decision"] = "revision_needed"
 
-    # Try to fill a same-(ci_id, round) placeholder first.
+    # Try to fill an existing placeholder for this draft.
+    # Workers' POST /draft inserts the placeholder without ci_id (it has gl_id
+    # + creator_name + round only), so the match is (gl_id, creator_name, round).
+    # ci_id is preferred when available but falls back to gl_id+name+round.
+    placeholder_id: Optional[int] = None
     if ci_id:
         existing = (
             sb.table("vc_reviews")
@@ -152,8 +156,24 @@ def save_review(
         )
         if existing.data:
             placeholder_id = existing.data[0]["id"]
-            sb.table("vc_reviews").update(data).eq("id", placeholder_id).execute()
-            return placeholder_id
+    if placeholder_id is None and gl_id:
+        existing = (
+            sb.table("vc_reviews")
+            .select("id")
+            .eq("gl_id", gl_id)
+            .eq("creator_name", creator_name)
+            .eq("round", round_num)
+            .is_("overall_score", "null")
+            .order("created_at", desc=False)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            placeholder_id = existing.data[0]["id"]
+
+    if placeholder_id is not None:
+        sb.table("vc_reviews").update(data).eq("id", placeholder_id).execute()
+        return placeholder_id
 
     result = sb.table("vc_reviews").insert(data).execute()
     return result.data[0]["id"]
