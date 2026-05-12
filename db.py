@@ -110,7 +110,12 @@ def save_review(
     ci_id: Optional[str] = None,
     video_url: Optional[str] = None,
 ) -> int:
-    """Save a review result. Auto-approves if score >= 90 and no manual flags. Returns the row ID."""
+    """Save a review result. Auto-approves if score >= 90 and no manual flags. Returns the row ID.
+
+    If a placeholder row exists for the same (ci_id, round) — created by
+    Workers at draft submission time — fill that row instead of inserting a
+    duplicate. This keeps one vc_reviews row per (ci_id, round).
+    """
     sb = _get_client()
     data = {
         "campaign_name": campaign_name,
@@ -132,6 +137,24 @@ def save_review(
     # < 80 → auto-reject (creator must fix before brand sees)
     elif report.overall_score < 80:
         data["admin_decision"] = "revision_needed"
+
+    # Try to fill a same-(ci_id, round) placeholder first.
+    if ci_id:
+        existing = (
+            sb.table("vc_reviews")
+            .select("id")
+            .eq("ci_id", ci_id)
+            .eq("round", round_num)
+            .is_("overall_score", "null")
+            .order("created_at", desc=False)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            placeholder_id = existing.data[0]["id"]
+            sb.table("vc_reviews").update(data).eq("id", placeholder_id).execute()
+            return placeholder_id
+
     result = sb.table("vc_reviews").insert(data).execute()
     return result.data[0]["id"]
 
@@ -176,7 +199,12 @@ def download_from_storage(path: str) -> bytes:
 def get_previous_review(
     campaign_name: str, creator_name: str
 ) -> Optional[tuple[ReviewReport, int]]:
-    """Get the most recent review for a creator in a campaign.
+    """Get the most recent COMPLETED review for a creator in a campaign.
+
+    Placeholder rows inserted by Workers (overall_score IS NULL) are skipped —
+    otherwise the next real review would bump round number off-by-one
+    (placeholder round=1 + new review → round 2, on a creator who only
+    submitted a 1st draft).
 
     Returns (report, round_number) or None.
     """
@@ -186,6 +214,7 @@ def get_previous_review(
         .select("report_json, round")
         .eq("campaign_name", campaign_name)
         .eq("creator_name", creator_name)
+        .not_.is_("overall_score", "null")
         .order("created_at", desc=True)
         .limit(1)
         .execute()
