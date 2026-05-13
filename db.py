@@ -179,17 +179,33 @@ def save_review(
     return result.data[0]["id"]
 
 
-def update_ci_status_after_review(ci_id: str, score: int, is_first_draft: bool):
+_ROUND_TO_DRAFT_STATUS = {
+    1: "1st_draft_submitted",
+    2: "2nd_draft_submitted",
+    3: "3rd_draft_submitted",
+    4: "4th_draft_submitted",
+}
+
+
+def update_ci_status_after_review(ci_id: str, score: int, round_num: int):
     """검수 점수에 따라 campaign_influencers 상태 업데이트.
-    80점+ → 1st/2nd_draft_submitted (어드민에 보임)
-    80점- → product_delivered로 유지 (크리에이터 재제출 필요)
+    80점+ → {N}st_draft_submitted (해당 차수)
+    80점- → 현재 상태 유지 (Workers 가 이미 설정한 상태 그대로 둔다)
+
+    round_num 은 검수 자체의 차수 (review-by-path 에서 계산된 review_round).
+    예전 구현은 `is_first = not bool(ci_1st_draft_urls)` 로 추론했으나, Workers 가
+    AI 검수 트리거 전에 이미 ci_*_draft_urls 를 채워둔 상태라 항상 `is_first=False` 가
+    되어 1차 제출인 인플이 '2nd_draft_submitted' 로 잘못 옮겨가는 버그가 있었음.
     """
     sb = _get_client()
-    if score >= 80:
-        status = "1st_draft_submitted" if is_first_draft else "2nd_draft_submitted"
-        sb.table("campaign_influencers").update(
-            {"ci_status": status, "updated_at": datetime.utcnow().isoformat()}
-        ).eq("id", ci_id).execute()
+    if score < 80:
+        return
+    status = _ROUND_TO_DRAFT_STATUS.get(round_num)
+    if not status:
+        return
+    sb.table("campaign_influencers").update(
+        {"ci_status": status, "updated_at": datetime.utcnow().isoformat()}
+    ).eq("id", ci_id).execute()
 
 
 def get_ci_info(ci_id: str) -> Optional[dict]:

@@ -270,7 +270,6 @@ async def start_review_by_path(
     gl_id = ci["ci_guideline_id"]
     creator_name = ci["ci_username"]
     campaign_name = ci.get("campaigns", {}).get("cam_name", "unknown")
-    is_first = not bool(ci.get("ci_1st_draft_urls"))
 
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "queued", "progress": "대기 중"}
@@ -346,7 +345,7 @@ async def start_review_by_path(
 
             # 점수에 따라 ci_status 업데이트
             from db import update_ci_status_after_review
-            update_ci_status_after_review(body.ci_id, report.overall_score, is_first)
+            update_ci_status_after_review(body.ci_id, report.overall_score, review_round)
 
             jobs[job_id]["status"] = "completed"
             jobs[job_id]["result"] = {
