@@ -133,6 +133,41 @@ async def parse_notion_guideline(body: NotionParseRequest):
     }
 
 
+class SlidesParseRequest(BaseModel):
+    gl_id: str
+    slides_url: str
+
+
+@app.post("/api/guidelines/parse-slides")
+async def parse_slides_guideline(body: SlidesParseRequest):
+    """구글 슬라이드를 PDF로 export → 파싱하여 gl_parsed_json에 저장.
+
+    슬라이드가 '링크가 있는 모든 사용자(뷰어)' 공유 설정이어야 export가 된다.
+    노션(parse-notion)과 동일한 흐름 — fetch → parse_guideline → save_guideline.
+    """
+    from processors.url_fetcher import detect_url_type, _fetch_gslides
+    from processors.guideline_parser import parse_guideline
+
+    # 1) 구글 슬라이드 URL인지 확인 후 PDF로 내려받기
+    if detect_url_type(body.slides_url) != "gslides":
+        raise HTTPException(400, f"구글 슬라이드 URL이 아닙니다: {body.slides_url}")
+    try:
+        filename, file_bytes = _fetch_gslides(body.slides_url)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    # 2) AI 파싱
+    parsed, _images = parse_guideline([(filename, file_bytes)])
+
+    # 3) DB 저장
+    save_guideline(body.gl_id, parsed)
+
+    return {
+        "gl_id": body.gl_id,
+        "guideline": parsed.model_dump(),
+    }
+
+
 @app.get("/api/guidelines")
 def api_list_guidelines():
     """파싱된 가이드라인 목록"""
