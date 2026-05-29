@@ -823,10 +823,12 @@ def run_compliance_check(
         progress_callback(total_steps, total_steps, "검수 완료!")
 
     # Filter out any caption items that slipped through in mandatory_check
+    # Claude가 모호한 응답으로 None을 반환하는 케이스 → "미충족(False)"으로 보수적 처리.
+    # 그대로 두면 ReviewReport(mandatory_check: Dict[str, bool]) pydantic validation에서 fail.
     filtered_mandatory = {}
     for key, val in (result.get("mandatory_check") or {}).items():
         if not _is_caption_item(key):
-            filtered_mandatory[key] = val
+            filtered_mandatory[key] = False if val is None else bool(val)
 
     # Filter out caption-related rule reviews
     filtered_rules = []
