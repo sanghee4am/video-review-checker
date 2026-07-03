@@ -157,7 +157,10 @@ def resize_frame(frame_path: str) -> bytes:
 
 
 def extract_audio(video_path: str, audio_path: str) -> str:
-    """Extract audio track from video as mp3."""
+    """Extract audio track from video as mp3. Raises on ffmpeg failure."""
+    # IG 릴스 등 일부 영상은 오디오 코덱 이슈로 실패할 수 있음 —
+    # 이전엔 returncode를 무시해 audio.mp3가 안 생긴 채 다음 단계에서 FileNotFoundError로 죽었음.
+    # check=True 로 명시적 예외 발생 → 상위 process_video가 잡아서 오디오 없이 계속 진행.
     subprocess.run(
         [
             _find_bin("ffmpeg"), "-i", video_path,
@@ -166,7 +169,7 @@ def extract_audio(video_path: str, audio_path: str) -> str:
             "-y",
             audio_path,
         ],
-        capture_output=True, text=True, timeout=300,
+        capture_output=True, text=True, timeout=300, check=True,
     )
     return audio_path
 
@@ -247,9 +250,15 @@ def process_video(video_bytes: bytes, filename: str) -> ProcessedVideo:
             hook_interval=FRAME_INTERVAL_SHORT if is_long else 0,
         )
 
-        # Extract and transcribe audio
-        extract_audio(video_path, audio_path)
-        full_transcript, segments = transcribe_audio(audio_path)
+        # Extract and transcribe audio — 오디오 트랙이 없거나 코덱 문제로 실패해도
+        # 프레임 기반 검수는 계속 진행 (transcript는 빈 값으로 fallback).
+        full_transcript: str = ""
+        segments: list = []
+        try:
+            extract_audio(video_path, audio_path)
+            full_transcript, segments = transcribe_audio(audio_path)
+        except Exception as e:
+            print(f"[VIDEO] audio extraction/transcription failed, continuing without transcript: {e}")
 
         # Build VideoFrame objects with timeline mapping
         hook_sec = 5.0 if is_long else 0
