@@ -550,6 +550,8 @@ def _build_guideline_images_content(guideline_images: list) -> list:
 
 def _call_claude_with_retry(client, content, max_tokens=8192, max_retries=5):
     """Call Claude API with adaptive exponential backoff on rate limit / overload."""
+    # OverloadedError는 anthropic SDK 버전에 따라 존재하지 않을 수 있음 — getattr로 안전 참조.
+    _OverloadedError = getattr(anthropic, "OverloadedError", type("_NoOverloaded", (Exception,), {}))
     for attempt in range(max_retries):
         try:
             response = client.messages.create(
@@ -559,7 +561,7 @@ def _call_claude_with_retry(client, content, max_tokens=8192, max_retries=5):
                 messages=[{"role": "user", "content": content}],
             )
             return response
-        except (anthropic.RateLimitError, anthropic.OverloadedError):
+        except (anthropic.RateLimitError, _OverloadedError):
             if attempt < max_retries - 1:
                 wait_time = min(30 * (2 ** attempt), 300)  # 30s, 60s, 120s, 240s, cap 300s
                 time.sleep(wait_time)

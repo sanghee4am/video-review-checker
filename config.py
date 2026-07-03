@@ -23,7 +23,7 @@ SUPABASE_KEY = _get_secret("SUPABASE_KEY")
 
 ADMIN_PASSWORD = _get_secret("ADMIN_PASSWORD")
 
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+CLAUDE_MODEL = "claude-sonnet-4-5-20250929"
 
 # 영상 프레임 추출 설정
 FRAME_INTERVAL_SHORT = 0.8   # 20초 미만 영상: 0.8초 간격
