@@ -163,11 +163,30 @@ def process_draft_batch(
     draft_round: int,
     bucket: str = "drafts",
 ) -> list[dict[str, Any]]:
-    """여러 파일을 순차 처리. draft_round는 1|2|3|4."""
-    if draft_round not in COLUMN_BY_ROUND:
-        raise ValueError(f"invalid draft_round: {draft_round}")
-    column = COLUMN_BY_ROUND[draft_round]
-    results = []
-    for p in paths:
-        results.append(process_draft_file(ci_id, p, bucket, column))
-    return results
+    """여러 파일을 순차 처리. draft_round는 1|2|3|4.
+
+    BackgroundTasks가 예외를 조용히 삼키므로 여기서 전체를 wrap해서
+    무슨 일이 있어도 로그로 흔적을 남긴다.
+    """
+    import traceback
+    print(f"[transcoder] batch start ci_id={ci_id} paths={len(paths)} round={draft_round} bucket={bucket}")
+    try:
+        if draft_round not in COLUMN_BY_ROUND:
+            raise ValueError(f"invalid draft_round: {draft_round}")
+        column = COLUMN_BY_ROUND[draft_round]
+        results = []
+        for p in paths:
+            try:
+                r = process_draft_file(ci_id, p, bucket, column)
+                results.append(r)
+                print(f"[transcoder] result: {r}")
+            except Exception as e:
+                print(f"[transcoder] outer-catch process_draft_file {p}: {e!r}")
+                traceback.print_exc()
+                results.append({"path": p, "action": "error", "error": str(e)})
+        print(f"[transcoder] batch done ci_id={ci_id} results={len(results)}")
+        return results
+    except Exception as e:
+        print(f"[transcoder] batch-level failure ci_id={ci_id}: {e!r}")
+        traceback.print_exc()
+        raise
