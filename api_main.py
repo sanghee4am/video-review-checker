@@ -549,6 +549,40 @@ async def check_content_endpoint(req: ContentCheckRequest):
 
 
 # ═══════════════════════════════════════════
+# HEVC → H.264 자동 트랜스코딩
+# app-guideline의 draft 업로드 완료 후 fire-and-forget으로 호출된다.
+# 감지·변환·DB 갱신은 백그라운드에서 실행하고 즉시 202 응답.
+# ═══════════════════════════════════════════
+class TranscodeRequest(BaseModel):
+    ci_id: str
+    paths: list[str]
+    draft_round: int  # 1 | 2 | 3 | 4
+    bucket: str = "drafts"
+
+
+@app.post("/transcode", status_code=202)
+async def transcode_endpoint(payload: TranscodeRequest, background: BackgroundTasks):
+    """Queue draft video files for HEVC(H.265) → H.264 mp4 conversion.
+
+    실제 파일 감지는 서버가 다시 수행하므로 클라이언트에서 미리 검사할 필요 없음.
+    HEVC(또는 웹 미지원 코덱)만 변환하고 이미 H.264인 파일은 그냥 skip.
+    """
+    from processors.transcoder import process_draft_batch
+    background.add_task(
+        process_draft_batch,
+        payload.ci_id,
+        payload.paths,
+        payload.draft_round,
+        payload.bucket,
+    )
+    return {
+        "queued": len(payload.paths),
+        "ci_id": payload.ci_id,
+        "draft_round": payload.draft_round,
+    }
+
+
+# ═══════════════════════════════════════════
 # 캡션 검수 (Paid 캠페인)
 # ═══════════════════════════════════════════
 @app.post("/api/caption-check")
