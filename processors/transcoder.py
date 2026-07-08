@@ -18,7 +18,24 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from db import _get_client
+import os
+from functools import lru_cache
+from supabase import create_client, Client
+
+from config import SUPABASE_URL
+
+
+@lru_cache(maxsize=1)
+def _get_client() -> Client:
+    """Storage 업로드 + campaign_influencers UPDATE 용.
+
+    Service role key가 있으면 RLS 우회, 없으면 기본 SUPABASE_KEY(anon)로 폴백.
+    맥미니 컨테이너 재시작 시 SUPABASE_SERVICE_ROLE_KEY 환경변수를 넘겨주면 안전.
+    """
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
+    if not SUPABASE_URL or not key:
+        raise RuntimeError("SUPABASE_URL and SUPABASE_(SERVICE_ROLE_)KEY required")
+    return create_client(SUPABASE_URL, key)
 
 COLUMN_BY_ROUND: dict[int, str] = {
     1: "ci_1st_draft_urls",
