@@ -562,11 +562,8 @@ class TranscodeRequest(BaseModel):
 
 @app.post("/transcode", status_code=202)
 async def transcode_endpoint(payload: TranscodeRequest, background: BackgroundTasks):
-    """Queue draft video files for HEVC(H.265) → H.264 mp4 conversion.
-
-    실제 파일 감지는 서버가 다시 수행하므로 클라이언트에서 미리 검사할 필요 없음.
-    HEVC(또는 웹 미지원 코덱)만 변환하고 이미 H.264인 파일은 그냥 skip.
-    """
+    """Queue draft video files for HEVC(H.265) → H.264 mp4 conversion."""
+    print(f"[transcoder-endpoint] received ci_id={payload.ci_id} paths={payload.paths} round={payload.draft_round}", flush=True)
     from processors.transcoder import process_draft_batch
     background.add_task(
         process_draft_batch,
@@ -575,6 +572,7 @@ async def transcode_endpoint(payload: TranscodeRequest, background: BackgroundTa
         payload.draft_round,
         payload.bucket,
     )
+    print(f"[transcoder-endpoint] background task queued", flush=True)
     return {
         "queued": len(payload.paths),
         "ci_id": payload.ci_id,

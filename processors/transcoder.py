@@ -169,7 +169,7 @@ def process_draft_batch(
     무슨 일이 있어도 로그로 흔적을 남긴다.
     """
     import traceback
-    print(f"[transcoder] batch start ci_id={ci_id} paths={len(paths)} round={draft_round} bucket={bucket}")
+    print(f"[transcoder] batch start ci_id={ci_id} paths={len(paths)} round={draft_round} bucket={bucket}", flush=True)
     try:
         if draft_round not in COLUMN_BY_ROUND:
             raise ValueError(f"invalid draft_round: {draft_round}")
